@@ -1,0 +1,32 @@
+######################################
+# Visual Studio per-user settings data
+######################################
+*.suo
+*.user
+**/.idea/**
+
+####################
+# Build/Test folders
+####################
+
+**/bin/
+**/obj/
+**/.vs/
+
+**/*project.lock.json
+**/project.lock.json
+**/*.nuspec
+
+
+Deployment/**
+NuGetDownloads/**
+DocDeployment/**
+DocBuildAssemblies/**
+Include/**
+
+
+.vs/
+.vscode/
+
+
+
