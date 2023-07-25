@@ -34,7 +34,7 @@ namespace AWS.MSK.Auth
 
         private static readonly TimeSpan ExpiryDuration = TimeSpan.FromSeconds(900);
 
-        private AmazonSecurityTokenServiceClient _stsClient = new Amazon.SecurityToken.AmazonSecurityTokenServiceClient();
+        private AmazonSecurityTokenServiceClient _stsClient;
         private readonly ILogger<AWSMSKAuthTokenGenerator> _logger;
 
         /// <summary>
@@ -80,8 +80,8 @@ namespace AWS.MSK.Auth
         /// <summary>
         /// Generate a token for IAM authentication to an MSK cluster.
         /// <remarks>
-        /// Token generation requires AWSCredentials and a AWS RegionEndpoint.
-        /// AWSCredentials They will be loaded from the application's default configuration,
+        /// Token generation requires AWSCredentials and an AWS RegionEndpoint.
+        /// AWSCredentials will be loaded from the application's default configuration,
         /// and if unsuccessful from the Instance Profile service on an EC2 instance.
         /// </remarks>
         /// </summary>
@@ -98,7 +98,8 @@ namespace AWS.MSK.Auth
         /// Generate a token for IAM authentication to an MSK cluster using an IAM Role
         /// <remarks>
         /// This method generates an Auth token using the roleArn provided with the provided SessionName (optional). If SessionName is not provided,
-        /// a default session name of "MSKSASLDefaultSession" is used.
+        /// a default session name of "MSKSASLDefaultSession" is used. Note that this method uses the STS global endpoint to assume role to sign the credentials.
+        /// For more involved use cases like using regional endpoints, consider using the GenerateAuthTokenFromCredentialsProvider method directly. 
         /// </remarks>
         /// </summary>
         /// <param name="region">Region of the MSK cluster</param>
@@ -106,7 +107,7 @@ namespace AWS.MSK.Auth
         /// <param name="sessionName">An optional session name</param>
         /// 
         /// <returns> An Auth token in string format </returns>
-        public string GenerateAuthTokenFromRole(RegionEndpoint region, String roleArn, String sessionName = "MSKSASLDefaultSession")
+        public async Task<string> GenerateAuthTokenFromRoleAsync(RegionEndpoint region, String roleArn, String sessionName = "MSKSASLDefaultSession")
         {
             var assumeRoleReq = new AssumeRoleRequest()
             {
@@ -114,18 +115,17 @@ namespace AWS.MSK.Auth
                 RoleArn = roleArn
             };
 
-            Task<AssumeRoleResponse> assumeRoleResponse = _stsClient.AssumeRoleAsync(assumeRoleReq, default);
+            AssumeRoleResponse assumeRoleResponse = await _stsClient.AssumeRoleAsync(assumeRoleReq, default);
 
-            var stsCredentials = assumeRoleResponse.Result.Credentials;
+            var stsCredentials = assumeRoleResponse.Credentials;
 
             return GenerateAuthTokenFromCredentialsProvider(() => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey, stsCredentials.SessionToken), region);
         }
 
         /// <summary>
-        /// Generate a token for IAM authentication to an MSK cluster using an IAM Role
+        /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile
         /// <remarks>
-        /// This method generates an Auth token using the roleArn provided with the provided SessionName (optional). If SessionName is not provided,
-        /// a default session name of "MSKSASLDefaultSession" is used.
+        /// This method generates an Auth token using and IAM Profile 
         /// </remarks>
         /// </summary>
         /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile</param>
@@ -158,12 +158,12 @@ namespace AWS.MSK.Auth
         {
             if (credentialsProvider == null)
             {
-                throw new ArgumentNullException("credentials");
+                throw new ArgumentNullException(nameof(credentialsProvider));
             }
                 
             if (region == null)
             {
-                throw new ArgumentNullException("region");
+                throw new ArgumentNullException(nameof(region));
             }
                
             AWSCredentials credentials = credentialsProvider.Invoke();

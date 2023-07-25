@@ -62,7 +62,7 @@ public class AWSMSKAuthTokenGeneratorTest
 
 
     [Fact]
-    public static void GenerateAuthToken_TestStsRoles()
+    public async static Task GenerateAuthToken_TestStsRoles()
     {
        
         AssumeRoleResponse assumeRoleResponse = new AssumeRoleResponse();
@@ -74,7 +74,7 @@ public class AWSMSKAuthTokenGeneratorTest
 
         AWSMSKAuthTokenGenerator authTokenGenerator = new AWSMSKAuthTokenGenerator(stsClientMock.Object, null);
 
-        String token = authTokenGenerator.GenerateAuthTokenFromRole(RegionEndpoint.USEast1, "arn:aws:iam::123456789101:role/MSKRole", "mySession");
+        String token = await authTokenGenerator.GenerateAuthTokenFromRoleAsync(RegionEndpoint.USEast1, "arn:aws:iam::123456789101:role/MSKRole", "mySession");
 
         validateTokenSignature(token);
     }
