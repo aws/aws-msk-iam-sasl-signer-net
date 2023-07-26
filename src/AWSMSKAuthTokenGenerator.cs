@@ -168,6 +168,11 @@ namespace AWS.MSK.Auth
                
             AWSCredentials credentials = credentialsProvider.Invoke();
 
+            if (credentials == null)
+            {
+                throw new ArgumentNullException(nameof(credentials));
+            }
+
             _logger.LogDebug("Generating auth token using credentials with access key id" + credentials.GetCredentials().AccessKey);
 
             GenerateMSKAuthTokenRequest authTokenRequest = new GenerateMSKAuthTokenRequest();
@@ -192,7 +197,7 @@ namespace AWS.MSK.Auth
             var authorization = "&" + signingResult.ForQueryParameters;
             var url = AmazonServiceClient.ComposeUrl(request);
 
-            String userAgent = "&UserAgent=" + getUserAgent();
+            String userAgent = "&User-Agent=" + getUserAgent();
             String authTokenString = url.AbsoluteUri + userAgent + authorization;
 
             _logger.LogDebug("Signed url for MSK cluster: " + authTokenString);

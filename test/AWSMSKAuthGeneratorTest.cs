@@ -95,6 +95,19 @@ public class AWSMSKAuthTokenGeneratorTest
         Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, null));
     }
 
+    [Fact]
+    public static void GenerateAuthToken_NullCredentials_ThrowsArgumentNullException()
+    {
+        var credentialsProviderMock = new Moq.Mock<Func<AWSCredentials>>();
+
+        AWSCredentials credentials = null;
+
+        credentialsProviderMock.Setup(proivder => proivder.Invoke()).Returns(credentials);
+
+        Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, null));
+    }
+
+
     private static void validateTokenSignature(string token)
     {
         byte[] decoded = Decode(token);
@@ -112,6 +125,7 @@ public class AWSMSKAuthTokenGeneratorTest
         Assert.Equal("kafka-cluster", credentialsTokens[3]);
         Assert.Equal("aws4_request", credentialsTokens[4]);
         Assert.Equal("sessionToken", queryParams["X-Amz-Security-Token"]);
+        Assert.Equal("aws-msk-iam-sasl-signer-net-"+SignerVersion.CurrentVersion, queryParams["User-Agent"]);
         Assert.True(Regex.IsMatch(queryParams["X-Amz-Date"], "(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z", RegexOptions.None));
         Assert.All(queryParams.AllKeys, key => SIGV4_KEYS.Contains(key));
     }
