@@ -45,9 +45,7 @@ For example, you can use the signer library to generate IAM based OAUTH token wi
     {
         try
         {
-            var token = mskAuthTokenGenerator.GenerateAuthToken(Amazon.RegionEndpoint.USEast1);
-            // Adds infinite. Typically, you would want to set this lower than the IAM credentials expiry. However, in this case, the server will force a reauthentication anyway. 
-            long expiryMs = (long)DateTime.MaxValue.Subtract(DateTime.UnixEpoch).TotalMilliseconds;
+            var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthToken(Amazon.RegionEndpoint.USEast1);
             client.OAuthBearerSetToken(token, expiryMs, "DummyPrincipal");
         }
         catch (Exception e)
@@ -76,14 +74,14 @@ For example, you can use the signer library to generate IAM based OAUTH token wi
  
 ```cs
 AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
-var token = mskAuthTokenGenerator.GenerateAuthTokenFromProfile(Amazon.RegionEndpoint.USEast1, "profileName");
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenFromProfile(Amazon.RegionEndpoint.USEast1, "profileName");
 ```
  
 ### Specifying a role based credential for a client
  
 ```cs
 AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
-var token = mskAuthTokenGenerator.GenerateAuthTokenFromRole(Amazon.RegionEndpoint.USEast1, "roleName", "roleSessioName");
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenFromRole(Amazon.RegionEndpoint.USEast1, "roleName", "roleSessioName");
 ```
 
 Note that roleSessionName is optional here. A default name is used if not specified. This uses the default credentials expiry (900s), and creates a new STS client for every invocation. 
@@ -93,7 +91,7 @@ For higher configurability, use the method mentioned below which takes a credent
  
 ```cs
 AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
-var token = mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProvider(Amazon.RegionEndpoint.USEast1, () => new BasicAWSCredentials("secretKey", "accessKey"));
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProvider(Amazon.RegionEndpoint.USEast1, () => new BasicAWSCredentials("secretKey", "accessKey"));
 ```
  
  
