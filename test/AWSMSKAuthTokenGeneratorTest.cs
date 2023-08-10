@@ -5,6 +5,7 @@ using Amazon;
 using Amazon.Runtime;
 using System;
 using Moq;
+using System.Globalization;
 using System.Text;
 using System.Web;
 using System.Text.RegularExpressions;
@@ -38,8 +39,8 @@ public class AWSMSKAuthTokenGeneratorTest
                 () => { return sessionCredentials; }
             };
 
-            String token = authTokenGenerator.GenerateAuthToken(RegionEndpoint.USEast1);
-            validateTokenSignature(token);
+            (String token, long expiryMs) = authTokenGenerator.GenerateAuthToken(RegionEndpoint.USEast1);
+            validateTokenSignature(token, expiryMs  );
         }
         finally
         {
@@ -55,9 +56,9 @@ public class AWSMSKAuthTokenGeneratorTest
 
         var credentialsProviderMock = new Moq.Mock<Func<AWSCredentials>>();
         credentialsProviderMock.Setup(provider => provider.Invoke()).Returns(sessionCredentials);
-        String token = authTokenGenerator.GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, RegionEndpoint.USEast1);
+        (String token, long expiryMs) = authTokenGenerator.GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, RegionEndpoint.USEast1);
 
-        validateTokenSignature(token);
+        validateTokenSignature(token, expiryMs);
     }
 
 
@@ -74,9 +75,10 @@ public class AWSMSKAuthTokenGeneratorTest
 
         AWSMSKAuthTokenGenerator authTokenGenerator = new AWSMSKAuthTokenGenerator(stsClientMock.Object, null);
 
-        String token = await authTokenGenerator.GenerateAuthTokenFromRoleAsync(RegionEndpoint.USEast1, "arn:aws:iam::123456789101:role/MSKRole", "mySession");
+        (String token, long expiryMs) = await authTokenGenerator.GenerateAuthTokenFromRoleAsync(RegionEndpoint.USEast1, "arn:aws:iam::123456789101:role/MSKRole", "mySession");
 
-        validateTokenSignature(token);
+        validateTokenSignature(token, expiryMs);
+     
     }
 
 
@@ -108,7 +110,7 @@ public class AWSMSKAuthTokenGeneratorTest
     }
 
 
-    private static void validateTokenSignature(string token)
+    private static void validateTokenSignature(string token, long expiryMs)
     {
         byte[] decoded = Decode(token);
 
@@ -120,6 +122,7 @@ public class AWSMSKAuthTokenGeneratorTest
         Assert.Equal("kafka-cluster:Connect", queryParams["Action"]);
         Assert.Equal("host", queryParams["X-Amz-SignedHeaders"]);
         Assert.Equal("AWS4-HMAC-SHA256", queryParams["X-Amz-Algorithm"]);
+        Assert.Equal("900", queryParams["X-Amz-Expires"]);
         Assert.Equal("accessKey", credentialsTokens[0]);
         Assert.Equal("us-east-1", credentialsTokens[2]);
         Assert.Equal("kafka-cluster", credentialsTokens[3]);
@@ -128,6 +131,9 @@ public class AWSMSKAuthTokenGeneratorTest
         Assert.Equal("aws-msk-iam-sasl-signer-net-"+SignerVersion.CurrentVersion, queryParams["User-Agent"]);
         Assert.True(Regex.IsMatch(queryParams["X-Amz-Date"], "(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z", RegexOptions.None));
         Assert.All(queryParams.AllKeys, key => SIGV4_KEYS.Contains(key));
+
+        long expectedExpiryMs = new DateTimeOffset(DateTime.ParseExact(queryParams["X-Amz-Date"], "yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture).Add(TimeSpan.FromSeconds(900))).ToUnixTimeMilliseconds();
+        Assert.Equal(expectedExpiryMs, expiryMs);
     }
     private static byte[] Decode(string encoded)
     {

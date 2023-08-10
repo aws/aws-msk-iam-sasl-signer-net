@@ -86,8 +86,8 @@ namespace AWS.MSK.Auth
         /// </remarks>
         /// </summary>
         /// <param name="region">Region of the MSK cluster</param>
-        /// <returns> An Auth token in string format </returns>
-        public string GenerateAuthToken(RegionEndpoint region)
+        /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
+        public (string, long) GenerateAuthToken(RegionEndpoint region)
         {
             AWSCredentials credentials = FallbackCredentialsFactory.GetCredentials();
 
@@ -106,8 +106,8 @@ namespace AWS.MSK.Auth
         /// <param name="roleArn">ARN of the role which needs to be assumed for signing the request</param>
         /// <param name="sessionName">An optional session name</param>
         /// 
-        /// <returns> An Auth token in string format </returns>
-        public async Task<string> GenerateAuthTokenFromRoleAsync(RegionEndpoint region, String roleArn, String sessionName = "MSKSASLDefaultSession")
+        /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
+        public async Task<(string, long)> GenerateAuthTokenFromRoleAsync(RegionEndpoint region, String roleArn, String sessionName = "MSKSASLDefaultSession")
         {
             var assumeRoleReq = new AssumeRoleRequest()
             {
@@ -130,9 +130,8 @@ namespace AWS.MSK.Auth
         /// </summary>
         /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile</param>
         /// <param name="region">Region of the MSK cluster</param>
-        /// <returns> An Auth token in string format </returns>
-
-        public string GenerateAuthTokenFromProfile(String profileName, RegionEndpoint region)
+        /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
+        public (string, long) GenerateAuthTokenFromProfile(String profileName, RegionEndpoint region)
         {
             var chain = new CredentialProfileStoreChain();
             AWSCredentials awsCredentials;
@@ -153,8 +152,8 @@ namespace AWS.MSK.Auth
         /// </summary>
         /// <param name="credentialsProvider">A Function which returns AWSCredentials to be used for signing the request</param>
         /// <param name="region">Region of the MSK cluster</param>
-        /// <returns> An Auth token in String format </returns>
-        public string GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region)
+        /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
+        public (string, long) GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region)
         {
             if (credentialsProvider == null)
             {
@@ -203,7 +202,9 @@ namespace AWS.MSK.Auth
             _logger.LogDebug("Signed url for MSK cluster: " + authTokenString);
 
             byte[] byteArray = System.Text.UTF8Encoding.UTF8.GetBytes(authTokenString);
-            return Convert.ToBase64String(byteArray).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+            long expiryMs = new DateTimeOffset(signingResult.DateTime.Add(ExpiryDuration)).ToUnixTimeSeconds() * 1000;
+            return (Convert.ToBase64String(byteArray).Replace('+', '-').Replace('/', '_').TrimEnd('='),  expiryMs);
         }
 
         private static String getUserAgent()
