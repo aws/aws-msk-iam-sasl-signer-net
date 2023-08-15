@@ -2,7 +2,8 @@
  
 [![Build status](https://github.com/aws/aws-msk-iam-sasl-signer-net/actions/workflows/ci.yml/badge.svg)](https://github.com/aws/aws-msk-iam-sasl-signer-net/actions/workflows/ci.yml) 
 [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/aws/aws-msk-iam-sasl-signer-net/blob/main/LICENSE.txt)
- 
+[![Security Scan](https://github.com/aws/aws-msk-iam-sasl-signer-net/actions/workflows/securityscan.yml/badge.svg?branch=main)](https://github.com/aws/aws-msk-iam-sasl-signer-net/actions/workflows/securityscan.yml)
+
 `aws-msk-iam-sasl-signer-net` is the AWS MSK IAM SASL Signer for .NET. 
 
 This libary vends encoded IAM v4 signatures which can be used as IAM Auth tokens to authenticate against an MSK cluster. 
