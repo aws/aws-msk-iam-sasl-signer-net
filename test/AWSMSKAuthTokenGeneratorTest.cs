@@ -3,7 +3,6 @@
 
 using Amazon;
 using Amazon.Runtime;
-using System;
 using Moq;
 using System.Globalization;
 using System.Text;
@@ -11,9 +10,6 @@ using System.Web;
 using System.Text.RegularExpressions;
 using Amazon.SecurityToken;
 using Amazon.SecurityToken.Model;
-using Amazon.Runtime.Credentials;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AWS.MSK.Auth.Tests;
@@ -25,7 +21,7 @@ public class AWSMSKAuthTokenGeneratorTest
     private static AWSCredentials sessionCredentials = new SessionAWSCredentials("accessKey", "secretKey", "sessionToken");
 
     [Fact]
-    public static void GenerateAuthToken_TestNoCredentials()
+    public async static void GenerateAuthToken_TestNoCredentials()
     {
         List<FallbackCredentialsFactory.CredentialsGenerator> originalFallbackList = FallbackCredentialsFactory.CredentialsGenerators;
         
@@ -39,7 +35,7 @@ public class AWSMSKAuthTokenGeneratorTest
                 () => { return sessionCredentials; }
             };
 
-            (String token, long expiryMs) = authTokenGenerator.GenerateAuthToken(RegionEndpoint.USEast1);
+            (String token, long expiryMs) = await authTokenGenerator.GenerateAuthToken(RegionEndpoint.USEast1);
             validateTokenSignature(token, expiryMs  );
         }
         finally

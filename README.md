@@ -2,8 +2,7 @@
  
 [![Build status](https://github.com/aws/aws-msk-iam-sasl-signer-net/actions/workflows/ci.yml/badge.svg)](https://github.com/aws/aws-msk-iam-sasl-signer-net/actions/workflows/ci.yml) 
 [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/aws/aws-msk-iam-sasl-signer-net/blob/main/LICENSE.txt)
-[![Security Scan](https://github.com/aws/aws-msk-iam-sasl-signer-net/actions/workflows/securityscan.yml/badge.svg?branch=main)](https://github.com/aws/aws-msk-iam-sasl-signer-net/actions/workflows/securityscan.yml)
-
+ 
 `aws-msk-iam-sasl-signer-net` is the AWS MSK IAM SASL Signer for .NET. 
 
 This libary vends encoded IAM v4 signatures which can be used as IAM Auth tokens to authenticate against an MSK cluster. 
@@ -95,7 +94,27 @@ AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
 var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProvider(Amazon.RegionEndpoint.USEast1, () => new BasicAWSCredentials("secretKey", "accessKey"));
 ```
  
- 
+
+
+## <a name="troubleshooting"></a> Troubleshooting
+
+### <a name="debug-creds"></a> Finding out which identity is being used
+
+When using default credentials, You may receive an Access denied error and there may be some doubt as to which credential is being exactly used. The credential may be sourced from a role ARN, EC2 instance profile, credential profile etc.
+
+You can set the optional parameter awsDebugCreds set to true before getting the token in such cases. 
+
+```cs
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthToken(Amazon.RegionEndpoint.USEast1, awsDebugCreds:true);
+
+```
+
+The client library will print a debug log of the form:
+
+```
+"Credentials Identity: UserId: ABCD:test124, Account: 1234567890, Arn: arn:aws:sts::1234567890:assumed-role/abc/test124"
+```
+
 ## <a name="getting-help"></a> Getting Help
  
 Please use these community resources for getting help. We use the GitHub issues
@@ -106,6 +125,7 @@ for tracking bugs and feature requests.
 * Open a support ticket with [AWS Support](http://docs.aws.amazon.com/awssupport/latest/user/getting-started.html).
  
 This repository provides a pluggable library with any .NET Kafka client for SASL/OAUTHBEARER mechanism. For more information about SASL/OAUTHBEARER mechanism please go to [KIP 255](https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=75968876).
+
  
 ### Opening Issues
  

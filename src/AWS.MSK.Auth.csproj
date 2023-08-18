@@ -23,6 +23,7 @@
 		<None Include="..\NOTICE" Pack="true" PackagePath="" />
 		<None Include="..\icon.png" Pack="true" PackagePath="" />
 		<None Include="..\THIRD-PARTY-LICENSES" Pack="true" PackagePath="" />
+		<None Include="..\README.md" Pack="true" PackagePath="" />
 	</ItemGroup>
 
 	<ItemGroup>
