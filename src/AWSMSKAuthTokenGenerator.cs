@@ -86,10 +86,21 @@ namespace AWS.MSK.Auth
         /// </remarks>
         /// </summary>
         /// <param name="region">Region of the MSK cluster</param>
+        /// <param name="awsDebugCreds">Whether to log caller identity used for generating auth token. Default value is false.
+        ///                             Note that this only works when LogLevel for logger is configured as Debug.
+        ///                             Using this in Production is discouraged as it creates a new STS client on every invocation</param>
         /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-        public (string, long) GenerateAuthToken(RegionEndpoint region)
+        public async Task<(string, long)> GenerateAuthTokenAsync(RegionEndpoint region, Boolean awsDebugCreds = false)
         {
             AWSCredentials credentials = FallbackCredentialsFactory.GetCredentials();
+            
+            if(awsDebugCreds && _logger.IsEnabled(LogLevel.Debug))
+            {
+                AmazonSecurityTokenServiceClient stsDebugClient = new Amazon.SecurityToken.AmazonSecurityTokenServiceClient(credentials, region);
+                GetCallerIdentityResponse response = await stsDebugClient.GetCallerIdentityAsync(new GetCallerIdentityRequest());
+
+                _logger.LogDebug("Credentials Identity: UserId: {user}, Account: {account}, Arn: {arn}", response.UserId, response.Account, response.Arn);
+            }
 
             return GenerateAuthTokenFromCredentialsProvider(() => credentials, region);
         }

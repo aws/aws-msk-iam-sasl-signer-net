@@ -25,7 +25,7 @@ public class AWSMSKAuthTokenGeneratorTest
     private static AWSCredentials sessionCredentials = new SessionAWSCredentials("accessKey", "secretKey", "sessionToken");
 
     [Fact]
-    public static void GenerateAuthToken_TestNoCredentials()
+    public async static void GenerateAuthToken_TestNoCredentials()
     {
         List<FallbackCredentialsFactory.CredentialsGenerator> originalFallbackList = FallbackCredentialsFactory.CredentialsGenerators;
         
@@ -39,7 +39,7 @@ public class AWSMSKAuthTokenGeneratorTest
                 () => { return sessionCredentials; }
             };
 
-            (String token, long expiryMs) = authTokenGenerator.GenerateAuthToken(RegionEndpoint.USEast1);
+            (String token, long expiryMs) = await authTokenGenerator.GenerateAuthTokenAsync(RegionEndpoint.USEast1);
             validateTokenSignature(token, expiryMs  );
         }
         finally

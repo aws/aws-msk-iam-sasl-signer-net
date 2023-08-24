@@ -95,6 +95,24 @@ AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
 var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProvider(Amazon.RegionEndpoint.USEast1, () => new BasicAWSCredentials("secretKey", "accessKey"));
 ```
  
+## <a name="troubleshooting"></a> Troubleshooting
+
+### <a name="debug-creds"></a> Finding out which identity is being used
+
+When using default credentials, You may receive an Access denied error and there may be some doubt as to which credential is being exactly used. The credential may be sourced from a role ARN, EC2 instance profile, credential profile etc.
+
+You can set the optional parameter awsDebugCreds set to true before getting the token in such cases. 
+
+```cs
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenAsync(Amazon.RegionEndpoint.USEast1, awsDebugCreds:true);
+
+```
+
+The client library will print a debug log of the form:
+
+```
+"Credentials Identity: UserId: ABCD:test124, Account: 1234567890, Arn: arn:aws:sts::1234567890:assumed-role/abc/test124"
+```
  
 ## <a name="getting-help"></a> Getting Help
  
