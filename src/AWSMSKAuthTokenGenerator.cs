@@ -102,7 +102,7 @@ namespace AWS.MSK.Auth
                 _logger.LogDebug("Credentials Identity: UserId: {user}, Account: {account}, Arn: {arn}", response.UserId, response.Account, response.Arn);
             }
 
-            return GenerateAuthTokenFromCredentialsProvider(() => credentials, region);
+            return await GenerateAuthTokenFromCredentialsProvider(() => credentials, region);
         }
 
         /// <summary>
@@ -130,7 +130,7 @@ namespace AWS.MSK.Auth
 
             var stsCredentials = assumeRoleResponse.Credentials;
 
-            return GenerateAuthTokenFromCredentialsProvider(() => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey, stsCredentials.SessionToken), region);
+            return await GenerateAuthTokenFromCredentialsProvider(() => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey, stsCredentials.SessionToken), region);
         }
 
         /// <summary>
@@ -142,14 +142,14 @@ namespace AWS.MSK.Auth
         /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile</param>
         /// <param name="region">Region of the MSK cluster</param>
         /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-        public (string, long) GenerateAuthTokenFromProfile(String profileName, RegionEndpoint region)
+        public async Task<(string, long)> GenerateAuthTokenFromProfile(String profileName, RegionEndpoint region)
         {
             var chain = new CredentialProfileStoreChain();
             AWSCredentials awsCredentials;
             
             if (chain.TryGetAWSCredentials(profileName, out awsCredentials))
             {
-                return GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region);
+                return await GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region);
             }
             else
             {
@@ -164,7 +164,7 @@ namespace AWS.MSK.Auth
         /// <param name="credentialsProvider">A Function which returns AWSCredentials to be used for signing the request</param>
         /// <param name="region">Region of the MSK cluster</param>
         /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-        public (string, long) GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region)
+        public async Task<(string, long)> GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region)
         {
             if (credentialsProvider == null)
             {
@@ -201,8 +201,8 @@ namespace AWS.MSK.Auth
                 request.Parameters[XAmzSecurityToken] = immutableCredentials.Token;
             }
 
-            var signingResult = AWS4PreSignedUrlSigner.SignRequest(request, null, new RequestMetrics(), immutableCredentials.AccessKey,
-                immutableCredentials.SecretKey, ServiceName, region.SystemName);
+            var signingResult = await Task.Run(() => AWS4PreSignedUrlSigner.SignRequest(request, null, new RequestMetrics(), immutableCredentials.AccessKey,
+                immutableCredentials.SecretKey, ServiceName, region.SystemName));
 
             var authorization = "&" + signingResult.ForQueryParameters;
             var url = AmazonServiceClient.ComposeUrl(request);
