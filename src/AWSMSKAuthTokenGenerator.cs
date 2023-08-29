@@ -210,8 +210,6 @@ namespace AWS.MSK.Auth
             String userAgent = "&User-Agent=" + getUserAgent();
             String authTokenString = url.AbsoluteUri + userAgent + authorization;
 
-            _logger.LogDebug("Signed url for MSK cluster: " + authTokenString);
-
             byte[] byteArray = System.Text.UTF8Encoding.UTF8.GetBytes(authTokenString);
 
             long expiryMs = new DateTimeOffset(signingResult.DateTime.Add(ExpiryDuration)).ToUnixTimeSeconds() * 1000;
