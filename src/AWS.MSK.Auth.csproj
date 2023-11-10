@@ -16,6 +16,8 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<RepositoryUrl>https://github.com/aws/aws-msk-iam-sasl-signer-net</RepositoryUrl>
+		<SignAssembly>True</SignAssembly>
+                <AssemblyOriginatorKeyFile>../public.snk</AssemblyOriginatorKeyFile>
 		<Company>Amazon Web Services</Company>
 	</PropertyGroup>
 
