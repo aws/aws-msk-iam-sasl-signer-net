@@ -39,7 +39,7 @@ For example, you can use the signer library to generate IAM based OAUTH token wi
         SaslMechanism = SaslMechanism.OAuthBearer
     };
 
-    AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator;
+    AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
 
     //Callback to handle OAuth bearer token refresh. It fetches the OAUTH Token from the AWSMSKAuthTokenGenerator class. 
     void OauthCallback(IClient client, string cfg)
