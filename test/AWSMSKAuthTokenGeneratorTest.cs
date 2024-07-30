@@ -49,7 +49,7 @@ namespace AWS.MSK.Auth.Test
 
             var credentialsProviderMock = new Moq.Mock<Func<AWSCredentials>>();
             credentialsProviderMock.Setup(provider => provider.Invoke()).Returns(sessionCredentials);
-            (var token, long expiryMs) = authTokenGenerator.GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, RegionEndpoint.USEast1);
+            (var token, long expiryMs) = authTokenGenerator.GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, RegionEndpoint.USEast1,false).GetAwaiter().GetResult();
 
             validateTokenSignature(token, expiryMs);
         }
@@ -80,7 +80,7 @@ namespace AWS.MSK.Auth.Test
         [Fact]
         public static void GenerateAuthToken_NullCredentials_ThrowsArgumentException()
         {
-            Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(null, RegionEndpoint.USEast1));
+            Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(null, RegionEndpoint.USEast1,false).GetAwaiter().GetResult());
         }
 
         [Fact]
@@ -89,7 +89,7 @@ namespace AWS.MSK.Auth.Test
             var credentialsProviderMock = new Moq.Mock<Func<AWSCredentials>>();
             credentialsProviderMock.Setup(provider => provider.Invoke()).Returns(sessionCredentials);
 
-            Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, null));
+            Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, null, false).GetAwaiter().GetResult());
         }
 
         [Fact]
@@ -101,7 +101,7 @@ namespace AWS.MSK.Auth.Test
 
             credentialsProviderMock.Setup(proivder => proivder.Invoke()).Returns(credentials);
 
-            Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, null));
+            Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, null, false).GetAwaiter().GetResult());
         }
 
 

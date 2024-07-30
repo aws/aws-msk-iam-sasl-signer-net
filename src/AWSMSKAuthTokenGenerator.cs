@@ -34,7 +34,6 @@ public class AWSMSKAuthTokenGenerator
     /// <param name="loggerFactory">Injectable logger factory</param>
     public AWSMSKAuthTokenGenerator(AmazonSecurityTokenServiceClient? stsClient = null, ILoggerFactory? loggerFactory = null)
     {
-
         if (stsClient != null)
         {
             _stsClient = stsClient;
@@ -67,6 +66,8 @@ public class AWSMSKAuthTokenGenerator
         }
     }
 
+    #region GenerateAuthToken
+
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster.
     /// <remarks>
@@ -84,29 +85,49 @@ public class AWSMSKAuthTokenGenerator
     {
         AWSCredentials credentials = FallbackCredentialsFactory.GetCredentials();
 
-        if (awsDebugCreds && _logger.IsEnabled(LogLevel.Debug))
-        {
-            AmazonSecurityTokenServiceClient stsDebugClient = new(credentials, region);
-            var response =  stsDebugClient.GetCallerIdentityAsync(new GetCallerIdentityRequest()).GetAwaiter().GetResult();
+        LogCredentialsIdentity(credentials,region, awsDebugCreds).GetAwaiter().GetResult();
 
-            _logger.LogDebug("Credentials Identity: UserId: {user}, Account: {account}, Arn: {arn}", response.UserId, response.Account, response.Arn);
-        }
-
-        return  GenerateAuthTokenFromCredentialsProvider(() => credentials, region);
+        return GenerateAuthTokenFromCredentialsProvider(() => credentials, region, false).GetAwaiter().GetResult();
     }
+
+    /// <summary>
+    /// Generate a token for IAM authentication to an MSK cluster.
+    /// <remarks>
+    /// Token generation requires AWSCredentials and an AWS RegionEndpoint.
+    /// AWSCredentials will be loaded from the application's default configuration,
+    /// and if unsuccessful from the Instance Profile service on an EC2 instance.
+    /// </remarks>
+    /// </summary>
+    /// <param name="region">Region of the MSK cluster</param>
+    /// <param name="awsDebugCreds">Whether to log caller identity used for generating auth token. Default value is false.
+    ///                             Note that this only works when LogLevel for logger is configured as Debug.
+    ///                             Using this in Production is discouraged as it creates a new STS client on every invocation</param>
+    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
+    public async Task<(string, long)> GenerateAuthTokenAsync(RegionEndpoint region, bool awsDebugCreds = false)
+    {
+        AWSCredentials credentials = FallbackCredentialsFactory.GetCredentials();
+
+        await LogCredentialsIdentity(credentials, region, awsDebugCreds);
+
+        return await GenerateAuthTokenFromCredentialsProvider(() => credentials, region);
+    }
+
+    #endregion GenerateAuthToken
+
+    #region GenerateAuthTokenFromRole
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using an IAM Role
     /// <remarks>
     /// This method generates an Auth token using the roleArn provided with the provided SessionName (optional). If SessionName is not provided,
     /// a default session name of "MSKSASLDefaultSession" is used. Note that this method uses the STS global endpoint to assume role to sign the credentials.
-    /// For more involved use cases like using regional endpoints, consider using the GenerateAuthTokenFromCredentialsProvider method directly. 
+    /// For more involved use cases like using regional endpoints, consider using the GenerateAuthTokenFromCredentialsProvider method directly.
     /// </remarks>
     /// </summary>
     /// <param name="region">Region of the MSK cluster</param>
     /// <param name="roleArn">ARN of the role which needs to be assumed for signing the request</param>
     /// <param name="sessionName">An optional session name</param>
-    /// 
+    ///
     /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
     public (string, long) GenerateAuthTokenFromRole(RegionEndpoint region, string roleArn, string sessionName = "MSKSASLDefaultSession")
     {
@@ -116,42 +137,101 @@ public class AWSMSKAuthTokenGenerator
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse =  _stsClient.AssumeRoleAsync(assumeRoleReq, default).GetAwaiter().GetResult();
+        var assumeRoleResponse = _stsClient.AssumeRoleAsync(assumeRoleReq, default).GetAwaiter().GetResult();
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
-        return  GenerateAuthTokenFromCredentialsProvider(() => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey, stsCredentials.SessionToken), region);
+        return GenerateAuthTokenFromCredentialsProvider(
+            () => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey, stsCredentials.SessionToken), region, false)
+            .GetAwaiter().GetResult();
     }
+
+    /// <summary>
+    /// Generate a token for IAM authentication to an MSK cluster using an IAM Role
+    /// <remarks>
+    /// This method generates an Auth token using the roleArn provided with the provided SessionName (optional). If SessionName is not provided,
+    /// a default session name of "MSKSASLDefaultSession" is used. Note that this method uses the STS global endpoint to assume role to sign the credentials.
+    /// For more involved use cases like using regional endpoints, consider using the GenerateAuthTokenFromCredentialsProvider method directly.
+    /// </remarks>
+    /// </summary>
+    /// <param name="region">Region of the MSK cluster</param>
+    /// <param name="roleArn">ARN of the role which needs to be assumed for signing the request</param>
+    /// <param name="sessionName">An optional session name</param>
+    ///
+    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
+    public async Task<(string, long)> GenerateAuthTokenFromRoleAsync(RegionEndpoint region, string roleArn, string sessionName = "MSKSASLDefaultSession")
+    {
+        var assumeRoleReq = new AssumeRoleRequest()
+        {
+            RoleSessionName = sessionName,
+            RoleArn = roleArn
+        };
+
+        var assumeRoleResponse = await _stsClient.AssumeRoleAsync(assumeRoleReq, default);
+
+        var stsCredentials = assumeRoleResponse.Credentials;
+
+        return await GenerateAuthTokenFromCredentialsProvider(
+            () => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey,
+                stsCredentials.SessionToken), region);
+    }
+
+    #endregion GenerateAuthTokenFromRole
+
+    #region GenerateAuthTokenFromProfile
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile
     /// <remarks>
-    /// This method generates an Auth token using and IAM Profile 
+    /// This method generates an Auth token using and IAM Profile
     /// </remarks>
     /// </summary>
     /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile</param>
     /// <param name="region">Region of the MSK cluster</param>
     /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public  (string, long) GenerateAuthTokenFromProfile(string profileName, RegionEndpoint region)
+    public (string, long) GenerateAuthTokenFromProfile(string profileName, RegionEndpoint region)
     {
         var chain = new CredentialProfileStoreChain();
 
         if (chain.TryGetAWSCredentials(profileName, out var awsCredentials))
         {
-            return  GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region);
+            return GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region, false).GetAwaiter().GetResult();
         }
 
-        throw new ArgumentException("Could not find credentials using profile " + profileName);
+        throw new ArgumentException($"Could not find credentials using profile {profileName}");
     }
 
     /// <summary>
-    /// Generate a token for IAM authentication to an MSK cluster using client provided AWS credentials. 
+    /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile
+    /// <remarks>
+    /// This method generates an Auth token using and IAM Profile
+    /// </remarks>
+    /// </summary>
+    /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile</param>
+    /// <param name="region">Region of the MSK cluster</param>
+    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
+    public Task<(string, long)> GenerateAuthTokenFromProfileAsync(string profileName, RegionEndpoint region)
+    {
+        var chain = new CredentialProfileStoreChain();
+
+        if (chain.TryGetAWSCredentials(profileName, out var awsCredentials))
+        {
+            return GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region).AsTask();
+        }
+
+        throw new ArgumentException($"Could not find credentials using profile {profileName}");
+    }
+
+    #endregion GenerateAuthTokenFromProfile
+
+    /// <summary>
+    /// Generate a token for IAM authentication to an MSK cluster using client provided AWS credentials.
     /// <remarks> </remarks>
     /// </summary>
     /// <param name="credentialsProvider">A Function which returns AWSCredentials to be used for signing the request</param>
     /// <param name="region">Region of the MSK cluster</param>
     /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public (string, long) GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region)
+    public async ValueTask<(string, long)> GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region, bool useAsync = true)
     {
         if (credentialsProvider == null)
         {
@@ -170,7 +250,7 @@ public class AWSMSKAuthTokenGenerator
             throw new ArgumentNullException(nameof(credentials));
         }
 
-        var immutableCredentials = credentials.GetCredentials();
+        var immutableCredentials = useAsync ? await credentials.GetCredentialsAsync() : credentials.GetCredentials();
 
         _logger.LogDebug("Generating auth token using credentials with access key id: {accessKey}", immutableCredentials.AccessKey);
 
@@ -196,7 +276,7 @@ public class AWSMSKAuthTokenGenerator
         var authorization = signingResult.ForQueryParameters;
         var url = AmazonServiceClient.ComposeUrl(request);
 
-        var authTokenString = url.AbsoluteUri + "&" + GetUserAgent() + "&" + authorization;
+        var authTokenString = $"{url.AbsoluteUri}&{GetUserAgent()}&{authorization}";
 
         var byteArray = System.Text.Encoding.UTF8.GetBytes(authTokenString);
 
@@ -204,10 +284,23 @@ public class AWSMSKAuthTokenGenerator
         return (Convert.ToBase64String(byteArray).Replace('+', '-').Replace('/', '_').TrimEnd('='), expiryMs);
     }
 
+    private static string GetUserAgent() => $"User-Agent=aws-msk-iam-sasl-signer-net-{SignerVersion.CurrentVersion}";
 
-    private static string GetUserAgent()
+    /// <summary>
+    ///     Helper method to log the user credentials
+    /// </summary>
+    /// <param name="credentials"></param>
+    /// <param name="region"></param>
+    /// <param name="awsDebugCreds"></param>
+    /// <returns></returns>
+    private async Task LogCredentialsIdentity(AWSCredentials credentials, RegionEndpoint region, bool awsDebugCreds)
     {
-        return "User-Agent=aws-msk-iam-sasl-signer-net-" + SignerVersion.CurrentVersion;
-    }
+        if (awsDebugCreds && _logger.IsEnabled(LogLevel.Debug))
+        {
+            AmazonSecurityTokenServiceClient stsDebugClient = new(credentials, region);
+            var response = await stsDebugClient.GetCallerIdentityAsync(new GetCallerIdentityRequest());
 
+            _logger.LogDebug("Credentials Identity: UserId: {user}, Account: {account}, Arn: {arn}", response.UserId, response.Account, response.Arn);
+        }
+    }
 }

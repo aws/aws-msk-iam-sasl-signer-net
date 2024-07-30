@@ -24,9 +24,9 @@ public class AwsmskAuthTokenGeneratorAsyncTest
     public static async void GenerateAuthToken_TestNoCredentials()
     {
         List<FallbackCredentialsFactory.CredentialsGenerator> originalFallbackList = FallbackCredentialsFactory.CredentialsGenerators;
-        
-        AWSMSKAuthTokenGeneratorAsync authTokenGeneratorAsync = new AWSMSKAuthTokenGeneratorAsync(null, NullLoggerFactory.Instance);
-  
+
+        AWSMSKAuthTokenGenerator authTokenGeneratorAsync = new AWSMSKAuthTokenGenerator(null, NullLoggerFactory.Instance);
+
         try
         {
             FallbackCredentialsFactory.Reset();
@@ -36,7 +36,7 @@ public class AwsmskAuthTokenGeneratorAsyncTest
             };
 
             (String token, long expiryMs) = await authTokenGeneratorAsync.GenerateAuthTokenAsync(RegionEndpoint.USEast1);
-            validateTokenSignature(token, expiryMs  );
+            validateTokenSignature(token, expiryMs);
         }
         finally
         {
@@ -48,40 +48,36 @@ public class AwsmskAuthTokenGeneratorAsyncTest
     [Fact]
     public static async void GenerateAuthToken_TestInjectedCredentials()
     {
-        AWSMSKAuthTokenGeneratorAsync authTokenGeneratorAsync = new AWSMSKAuthTokenGeneratorAsync();
+        AWSMSKAuthTokenGenerator authTokenGeneratorAsync = new AWSMSKAuthTokenGenerator();
 
         var credentialsProviderMock = new Moq.Mock<Func<AWSCredentials>>();
         credentialsProviderMock.Setup(provider => provider.Invoke()).Returns(sessionCredentials);
-        (var token, long expiryMs) = await authTokenGeneratorAsync.GenerateAuthTokenFromCredentialsProviderAsync(credentialsProviderMock.Object, RegionEndpoint.USEast1);
+        (var token, long expiryMs) = await authTokenGeneratorAsync.GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, RegionEndpoint.USEast1);
 
         validateTokenSignature(token, expiryMs);
     }
 
-
     [Fact]
     public static async Task GenerateAuthToken_TestStsRoles()
     {
-       
         AssumeRoleResponse assumeRoleResponse = new AssumeRoleResponse();
         assumeRoleResponse.Credentials = new Credentials("accessKey", "secretKey", "sessionToken", DateTime.Now);
 
         var stsClientMock = new Moq.Mock<AmazonSecurityTokenServiceClient>();
 
-        stsClientMock.Setup(m => m.AssumeRoleAsync(It.Is<AssumeRoleRequest>(r=> r.RoleArn == "arn:aws:iam::123456789101:role/MSKRole" && r.RoleSessionName == "mySession"), default)).Returns(Task.FromResult(assumeRoleResponse));
+        stsClientMock.Setup(m => m.AssumeRoleAsync(It.Is<AssumeRoleRequest>(r => r.RoleArn == "arn:aws:iam::123456789101:role/MSKRole" && r.RoleSessionName == "mySession"), default)).Returns(Task.FromResult(assumeRoleResponse));
 
-        AWSMSKAuthTokenGeneratorAsync authTokenGeneratorAsync = new AWSMSKAuthTokenGeneratorAsync(stsClientMock.Object, null);
+        AWSMSKAuthTokenGenerator authTokenGeneratorAsync = new AWSMSKAuthTokenGenerator(stsClientMock.Object, null);
 
         (var token, long expiryMs) = await authTokenGeneratorAsync.GenerateAuthTokenFromRoleAsync(RegionEndpoint.USEast1, "arn:aws:iam::123456789101:role/MSKRole", "mySession");
 
         validateTokenSignature(token, expiryMs);
-     
     }
 
-
     [Fact]
-    public static  void GenerateAuthToken_NullCredentials_ThrowsArgumentException()
+    public static void GenerateAuthToken_NullCredentials_ThrowsArgumentException()
     {
-        Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGeneratorAsync().GenerateAuthTokenFromCredentialsProviderAsync(null, RegionEndpoint.USEast1));
+        Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(null, RegionEndpoint.USEast1).AsTask());
     }
 
     [Fact]
@@ -90,7 +86,7 @@ public class AwsmskAuthTokenGeneratorAsyncTest
         var credentialsProviderMock = new Moq.Mock<Func<AWSCredentials>>();
         credentialsProviderMock.Setup(provider => provider.Invoke()).Returns(sessionCredentials);
 
-        Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGeneratorAsync().GenerateAuthTokenFromCredentialsProviderAsync(credentialsProviderMock.Object, null));
+        Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, null).AsTask());
     }
 
     [Fact]
@@ -102,9 +98,8 @@ public class AwsmskAuthTokenGeneratorAsyncTest
 
         credentialsProviderMock.Setup(proivder => proivder.Invoke()).Returns(credentials);
 
-        Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGeneratorAsync().GenerateAuthTokenFromCredentialsProviderAsync(credentialsProviderMock.Object, null));
+        Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(credentialsProviderMock.Object, null).AsTask());
     }
-
 
     private static void validateTokenSignature(string token, long expiryMs)
     {
@@ -124,13 +119,14 @@ public class AwsmskAuthTokenGeneratorAsyncTest
         Assert.Equal("kafka-cluster", credentialsTokens[3]);
         Assert.Equal("aws4_request", credentialsTokens[4]);
         Assert.Equal("sessionToken", queryParams["X-Amz-Security-Token"]);
-        Assert.Equal("aws-msk-iam-sasl-signer-net-"+SignerVersion.CurrentVersion, queryParams["User-Agent"]);
+        Assert.Equal("aws-msk-iam-sasl-signer-net-" + SignerVersion.CurrentVersion, queryParams["User-Agent"]);
         Assert.True(Regex.IsMatch(queryParams["X-Amz-Date"], "(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z", RegexOptions.None));
         Assert.All(queryParams.AllKeys, key => SIGV4_KEYS.Contains(key));
 
         long expectedExpiryMs = new DateTimeOffset(DateTime.ParseExact(queryParams["X-Amz-Date"], "yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture).Add(TimeSpan.FromSeconds(900))).ToUnixTimeMilliseconds();
         Assert.Equal(expectedExpiryMs, expiryMs);
     }
+
     private static byte[] Decode(string encoded)
     {
         List<char> list = new List<char>(encoded.ToCharArray());
@@ -150,6 +146,7 @@ public class AwsmskAuthTokenGeneratorAsyncTest
             case 2:
                 list.AddRange("==");
                 break;
+
             case 3:
                 list.Add('=');
                 break;
