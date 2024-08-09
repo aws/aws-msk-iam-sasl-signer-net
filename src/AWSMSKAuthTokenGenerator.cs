@@ -1,4 +1,7 @@
-﻿using Amazon.Runtime.CredentialManagement;
+﻿// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+using Amazon.Runtime.CredentialManagement;
 using Amazon.Runtime.Internal.Auth;
 using Amazon.Runtime.Internal.Util;
 using Amazon.Runtime.Internal;
