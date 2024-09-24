@@ -46,7 +46,7 @@ For example, you can use the signer library to generate IAM based OAUTH token wi
     {
         try
         {
-            var (token, expiryMs) = await mskAuthTokenGenerator.GenerateAuthTokenAsync(Amazon.RegionEndpoint.USEast1);
+            var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthToken(Amazon.RegionEndpoint.USEast1);
             client.OAuthBearerSetToken(token, expiryMs, "DummyPrincipal");
         }
         catch (Exception e)
@@ -75,14 +75,14 @@ For example, you can use the signer library to generate IAM based OAUTH token wi
  
 ```cs
 AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
-var (token, expiryMs) = await mskAuthTokenGenerator.GenerateAuthTokenFromProfileAsync(Amazon.RegionEndpoint.USEast1, "profileName");
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenFromProfile("profileName", Amazon.RegionEndpoint.USEast1);
 ```
  
 ### Specifying a role based credential for a client
  
 ```cs
 AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
-var (token, expiryMs) = await mskAuthTokenGenerator.GenerateAuthTokenFromRoleAsync(Amazon.RegionEndpoint.USEast1, "roleName", "roleSessioName");
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenFromRole(Amazon.RegionEndpoint.USEast1, "roleName", "roleSessioName");
 ```
 
 Note that roleSessionName is optional here. A default name is used if not specified. This uses the default token expiry, and creates a new STS client for every invocation. 
@@ -92,7 +92,7 @@ For higher configurability, use the method mentioned below which takes a credent
  
 ```cs
 AWSMSKAuthTokenGenerator mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator();
-var (token, expiryMs) = await mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProviderAsyc(Amazon.RegionEndpoint.USEast1, () => new BasicAWSCredentials("secretKey", "accessKey"));
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProvider(() => new BasicAWSCredentials("secretKey", "accessKey"), Amazon.RegionEndpoint.USEast1);
 ```
  
 ## <a name="troubleshooting"></a> Troubleshooting
@@ -104,7 +104,7 @@ When using default credentials, You may receive an Access denied error and there
 You can set the optional parameter awsDebugCreds set to true before getting the token in such cases. 
 
 ```cs
-var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthTokenAsync(Amazon.RegionEndpoint.USEast1, awsDebugCreds:true);
+var (token, expiryMs) = mskAuthTokenGenerator.GenerateAuthToken(Amazon.RegionEndpoint.USEast1, awsDebugCreds:true);
 
 ```
 
