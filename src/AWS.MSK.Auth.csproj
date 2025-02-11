@@ -1,38 +1,38 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  	<PropertyGroup>
-		<TargetFramework>netstandard2.0</TargetFramework>
-		<RootNamespace>AWS.MSK.Auth</RootNamespace>
-		<ImplicitUsings>enable</ImplicitUsings>
-    	<Nullable>enable</Nullable>
-		<LangVersion>10.0</LangVersion>
-		<Version>1.0.1</Version>
-		<Title>AWS MSK Signer library for IAM Authentication</Title>
-		<Description>This libary vends encoded IAM v4 signatures which can be used as IAM Auth tokens to authenticate against an MSK cluster.</Description>
-		<Authors>Amazon Web Services</Authors>
-		<Copyright>Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.</Copyright>
-		<PackageTags>AWS;MSK;Kafka;IAM</PackageTags>
-		<PackageProjectUrl>https://github.com/aws/aws-msk-iam-sasl-signer-net</PackageProjectUrl>
-		<PackageIcon>icon.png</PackageIcon>
-		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<PackageLicenseFile>LICENSE</PackageLicenseFile>
-		<RepositoryUrl>https://github.com/aws/aws-msk-iam-sasl-signer-net</RepositoryUrl>
-		<SignAssembly>True</SignAssembly>
+    <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>AWS.MSK.Auth</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+      <Nullable>enable</Nullable>
+    <LangVersion>10.0</LangVersion>
+    <Version>1.0.1</Version>
+    <Title>AWS MSK Signer library for IAM Authentication</Title>
+    <Description>This libary vends encoded IAM v4 signatures which can be used as IAM Auth tokens to authenticate against an MSK cluster.</Description>
+    <Authors>Amazon Web Services</Authors>
+    <Copyright>Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.</Copyright>
+    <PackageTags>AWS;MSK;Kafka;IAM</PackageTags>
+    <PackageProjectUrl>https://github.com/aws/aws-msk-iam-sasl-signer-net</PackageProjectUrl>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <RepositoryUrl>https://github.com/aws/aws-msk-iam-sasl-signer-net</RepositoryUrl>
+    <SignAssembly>True</SignAssembly>
                 <AssemblyOriginatorKeyFile>../public.snk</AssemblyOriginatorKeyFile>
-		<Company>Amazon Web Services</Company>
-	</PropertyGroup>
+    <Company>Amazon Web Services</Company>
+  </PropertyGroup>
 
 
-  	<ItemGroup>
-		<None Include="..\LICENSE" Pack="true" PackagePath="" />
-		<None Include="..\NOTICE" Pack="true" PackagePath="" />
-		<None Include="..\icon.png" Pack="true" PackagePath="" />
-		<None Include="..\THIRD-PARTY-LICENSES" Pack="true" PackagePath="" />
-		<None Include="..\README.md" Pack="true" PackagePath="" />
-	</ItemGroup>
+    <ItemGroup>
+    <None Include="..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\NOTICE" Pack="true" PackagePath="" />
+    <None Include="..\icon.png" Pack="true" PackagePath="" />
+    <None Include="..\THIRD-PARTY-LICENSES" Pack="true" PackagePath="" />
+    <None Include="..\README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
 
-	<ItemGroup>
-		<PackageReference Include="AWSSDK.Core" Version="3.7.107.9" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.1" />
-		<PackageReference Include="AWSSDK.SecurityToken" Version="3.7.103.16" />
-  	</ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.Core" Version="3.7.400.36" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.1" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="3.7.103.16" />
+    </ItemGroup>
 </Project>
