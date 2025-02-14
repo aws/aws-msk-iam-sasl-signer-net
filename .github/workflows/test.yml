@@ -7,7 +7,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        net-version: [7.0.x]
+        net-version: [8.0.x]
 
     runs-on: ${{ matrix.os }}
   
