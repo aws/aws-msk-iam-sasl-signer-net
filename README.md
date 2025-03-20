@@ -25,7 +25,7 @@ To get started working with the AWS MSK IAM SASL Signer for .NET with your Kafka
  
 ###### Add Dependencies
  
- AWS MSK IAM SASL SIGNER is distribured via NuGet. We provide the package [AWS.MSK.Auth](https://www.nuget.org/packages/AWS.MSK.Auth/) which can be imported via NuGet in your development environment. 
+ AWS MSK IAM SASL SIGNER is distributed via NuGet. We provide the package [AWS.MSK.Auth](https://www.nuget.org/packages/AWS.MSK.Auth/) which can be imported via NuGet in your development environment. 
  
 ###### Write Code
  
