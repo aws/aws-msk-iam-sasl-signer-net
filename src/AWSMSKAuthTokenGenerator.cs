@@ -1,23 +1,25 @@
 ﻿// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
+using System.Text;
+using Amazon;
+using Amazon.Runtime;
 using Amazon.Runtime.CredentialManagement;
+using Amazon.Runtime.Credentials;
+using Amazon.Runtime.Internal;
 using Amazon.Runtime.Internal.Auth;
 using Amazon.Runtime.Internal.Util;
-using Amazon.Runtime.Internal;
-using Amazon.Runtime;
-using Amazon.SecurityToken.Model;
 using Amazon.SecurityToken;
+using Amazon.SecurityToken.Model;
 using AWS.MSK.Auth;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
-using System.Globalization;
-using Amazon;
+using Microsoft.Extensions.Logging.Abstractions;
 
 public class AWSMSKAuthTokenGenerator
 {
     private const string ServiceName = "kafka-cluster";
-    private const string HTTPMethod = "GET";
+    private const string HttpMethod = "GET";
     private const string Scheme = "https";
     private const string ActionKey = "Action";
     private const string ActionValue = "kafka-cluster:Connect";
@@ -27,33 +29,26 @@ public class AWSMSKAuthTokenGenerator
 
     private static readonly TimeSpan ExpiryDuration = TimeSpan.FromSeconds(900);
 
-    private readonly AmazonSecurityTokenServiceClient _stsClient;
+    private AmazonSecurityTokenServiceClient? _stsClient;
+    private RegionEndpoint? _stsClientRegion;
     private readonly ILogger<AWSMSKAuthTokenGenerator> _logger;
+    private readonly Func<DateTime> _timeProvider;
 
     /// <summary>
     /// Constructor for AWSMSKAuthTokenGenerator.
     /// </summary>
     /// <param name="stsClient">Amazon STS Client</param>
     /// <param name="loggerFactory">Injectable logger factory</param>
-    public AWSMSKAuthTokenGenerator(AmazonSecurityTokenServiceClient? stsClient = null, ILoggerFactory? loggerFactory = null)
+    /// <param name="timeProvider">Injectable time provider</param>
+    public AWSMSKAuthTokenGenerator(
+        AmazonSecurityTokenServiceClient? stsClient = null,
+        ILoggerFactory? loggerFactory = null,
+        Func<DateTime>? timeProvider = null)
     {
-        if (stsClient != null)
-        {
-            _stsClient = stsClient;
-        }
-        else
-        {
-            _stsClient = new AmazonSecurityTokenServiceClient();
-        }
-
-        if (loggerFactory != null)
-        {
-            _logger = loggerFactory.CreateLogger<AWSMSKAuthTokenGenerator>();
-        }
-        else
-        {
-            _logger = NullLoggerFactory.Instance.CreateLogger<AWSMSKAuthTokenGenerator>();
-        }
+        _stsClient = stsClient;
+        _stsClientRegion = stsClient?.Config?.RegionEndpoint;
+        _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<AWSMSKAuthTokenGenerator>();
+        _timeProvider = timeProvider ?? (static () => DateTime.UtcNow);
     }
 
     /// <summary>
@@ -61,15 +56,13 @@ public class AWSMSKAuthTokenGenerator
     /// This request type will only be used to generate the signed token.
     /// It will never be used to make an actual request to cluster
     /// </summary>
-    private class GenerateMSKAuthTokenRequest : AmazonWebServiceRequest
+    private class GenerateMskAuthTokenRequest : AmazonWebServiceRequest
     {
-        public GenerateMSKAuthTokenRequest()
-        {
+        public GenerateMskAuthTokenRequest() =>
             ((IAmazonWebServiceRequest)this).SignatureVersion = SignatureVersion.SigV4;
-        }
     }
 
-    #region GenerateAuthToken
+#region GenerateAuthToken
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster.
@@ -86,9 +79,9 @@ public class AWSMSKAuthTokenGenerator
     /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
     public (string, long) GenerateAuthToken(RegionEndpoint region, bool awsDebugCreds = false)
     {
-        AWSCredentials credentials = FallbackCredentialsFactory.GetCredentials();
+        AWSCredentials credentials = DefaultAWSCredentialsIdentityResolver.GetCredentials();
 
-        LogCredentialsIdentity(credentials,region, awsDebugCreds).GetAwaiter().GetResult();
+        LogCredentialsIdentity(credentials, region, awsDebugCreds).GetAwaiter().GetResult();
 
         return GenerateAuthTokenFromCredentialsProvider(() => credentials, region, false).GetAwaiter().GetResult();
     }
@@ -108,16 +101,27 @@ public class AWSMSKAuthTokenGenerator
     /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
     public async Task<(string, long)> GenerateAuthTokenAsync(RegionEndpoint region, bool awsDebugCreds = false)
     {
-        AWSCredentials credentials = FallbackCredentialsFactory.GetCredentials();
+        AWSCredentials credentials = await DefaultAWSCredentialsIdentityResolver.GetCredentialsAsync();
 
         await LogCredentialsIdentity(credentials, region, awsDebugCreds);
 
         return await GenerateAuthTokenFromCredentialsProvider(() => credentials, region);
     }
 
-    #endregion GenerateAuthToken
+#endregion GenerateAuthToken
 
-    #region GenerateAuthTokenFromRole
+#region GenerateAuthTokenFromRole
+
+    private AmazonSecurityTokenServiceClient GetStsClient(RegionEndpoint region)
+    {
+        if (_stsClient is null || _stsClientRegion != region)
+        {
+            _stsClient = new AmazonSecurityTokenServiceClient(region);
+            _stsClientRegion = region;
+        }
+
+        return _stsClient;
+    }
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using an IAM Role
@@ -134,13 +138,13 @@ public class AWSMSKAuthTokenGenerator
     /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
     public (string, long) GenerateAuthTokenFromRole(RegionEndpoint region, string roleArn, string sessionName = "MSKSASLDefaultSession")
     {
-        var assumeRoleReq = new AssumeRoleRequest()
+        var assumeRoleReq = new AssumeRoleRequest
         {
             RoleSessionName = sessionName,
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = _stsClient.AssumeRoleAsync(assumeRoleReq, default).GetAwaiter().GetResult();
+        var assumeRoleResponse = GetStsClient(region).AssumeRoleAsync(assumeRoleReq).GetAwaiter().GetResult();
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
@@ -164,13 +168,13 @@ public class AWSMSKAuthTokenGenerator
     /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
     public async Task<(string, long)> GenerateAuthTokenFromRoleAsync(RegionEndpoint region, string roleArn, string sessionName = "MSKSASLDefaultSession")
     {
-        var assumeRoleReq = new AssumeRoleRequest()
+        var assumeRoleReq = new AssumeRoleRequest
         {
             RoleSessionName = sessionName,
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = await _stsClient.AssumeRoleAsync(assumeRoleReq, default);
+        var assumeRoleResponse = await GetStsClient(region).AssumeRoleAsync(assumeRoleReq);
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
@@ -179,9 +183,9 @@ public class AWSMSKAuthTokenGenerator
                 stsCredentials.SessionToken), region);
     }
 
-    #endregion GenerateAuthTokenFromRole
+#endregion GenerateAuthTokenFromRole
 
-    #region GenerateAuthTokenFromProfile
+#region GenerateAuthTokenFromProfile
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile
@@ -225,7 +229,7 @@ public class AWSMSKAuthTokenGenerator
         throw new ArgumentException($"Could not find credentials using profile {profileName}");
     }
 
-    #endregion GenerateAuthTokenFromProfile
+#endregion GenerateAuthTokenFromProfile
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using client provided AWS credentials.
@@ -233,6 +237,7 @@ public class AWSMSKAuthTokenGenerator
     /// </summary>
     /// <param name="credentialsProvider">A Function which returns AWSCredentials to be used for signing the request</param>
     /// <param name="region">Region of the MSK cluster</param>
+    /// <param name="useAsync">Specifies to use async model</param>
     /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
     public async ValueTask<(string, long)> GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region, bool useAsync = true)
     {
@@ -253,16 +258,27 @@ public class AWSMSKAuthTokenGenerator
             throw new ArgumentNullException(nameof(credentials));
         }
 
+        TimeSpan ttl = ExpiryDuration;
+        if (credentials.Expiration is not null) {
+            // Calculate actual TTL for credential
+            TimeSpan ttlCredential = credentials.Expiration.Value - _timeProvider.Invoke();
+            // Only use TTL for credential if it's less than the prior TTL to cap token lifetime
+            if (ttlCredential < ttl) {
+                ttl = ttlCredential;
+                _logger.LogDebug("Lifetime of token is shorter than default of 15 minutes: {lifetime}s", ttlCredential.TotalSeconds.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
         var immutableCredentials = useAsync ? await credentials.GetCredentialsAsync() : credentials.GetCredentials();
 
         _logger.LogDebug("Generating auth token using credentials with access key id: {accessKey}", immutableCredentials.AccessKey);
 
-        var authTokenRequest = new GenerateMSKAuthTokenRequest();
+        var authTokenRequest = new GenerateMskAuthTokenRequest();
         IRequest request = new DefaultRequest(authTokenRequest, ServiceName);
 
         request.UseQueryString = true;
-        request.HttpMethod = HTTPMethod;
-        request.Parameters.Add(XAmzExpires, ExpiryDuration.TotalSeconds.ToString(CultureInfo.InvariantCulture));
+        request.HttpMethod = HttpMethod;
+        request.Parameters.Add(XAmzExpires, ttl.TotalSeconds.ToString(CultureInfo.InvariantCulture));
         request.Parameters.Add(ActionKey, ActionValue);
         var hostName = string.Format(HostnameStringFormat, region.SystemName);
         request.Endpoint = new UriBuilder(Scheme, hostName).Uri;
@@ -281,9 +297,9 @@ public class AWSMSKAuthTokenGenerator
 
         var authTokenString = $"{url.AbsoluteUri}&{GetUserAgent()}&{authorization}";
 
-        var byteArray = System.Text.Encoding.UTF8.GetBytes(authTokenString);
+        var byteArray = Encoding.UTF8.GetBytes(authTokenString);
 
-        var expiryMs = new DateTimeOffset(signingResult.DateTime.Add(ExpiryDuration)).ToUnixTimeSeconds() * 1000;
+        var expiryMs = new DateTimeOffset(signingResult.DateTime.Add(ttl)).ToUnixTimeSeconds() * 1000;
         return (Convert.ToBase64String(byteArray).Replace('+', '-').Replace('/', '_').TrimEnd('='), expiryMs);
     }
 
