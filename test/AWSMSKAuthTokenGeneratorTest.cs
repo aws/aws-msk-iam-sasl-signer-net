@@ -30,7 +30,7 @@ namespace AWS.MSK.Auth.Test
             {
                 AWSConfigs.AWSCredentialsGenerators = [() => SessionCredentials];
 
-                (string token, long expiryMs) = new AWSMSKAuthTokenGenerator(loggerFactory: NullLoggerFactory.Instance).GenerateAuthToken(RegionEndpoint.USEast1);
+                (string token, long expiryMs) = new AWSMSKAuthTokenGenerator().GenerateAuthToken(RegionEndpoint.USEast1);
                 ValidateTokenSignature(token, expiryMs);
             }
             finally
@@ -151,6 +151,142 @@ namespace AWS.MSK.Auth.Test
             var credentials = new TestCredentials(now + ttl);
 
             var mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator(timeProvider: () => now);
+
+            // First store credentials
+            mskAuthTokenGenerator
+                .GenerateAuthTokenFromCredentialsProvider(() => credentials, RegionEndpoint.USEast1, false).GetAwaiter()
+                .GetResult();
+            (var token, long expiryMs) = mskAuthTokenGenerator
+                .GenerateAuthTokenFromCredentialsProvider(() => credentials, RegionEndpoint.USEast1, false).GetAwaiter()
+                .GetResult();
+
+            ValidateTokenSignature(token, expiryMs, ttl);
+        }
+
+        [Fact]
+        public void GenerateAuthToken_TestNoCredentials_CustomExpiryDuration()
+        {
+            var originalFallbackList = AWSConfigs.AWSCredentialsGenerators;
+
+            try
+            {
+                AWSConfigs.AWSCredentialsGenerators = [() => SessionCredentials];
+
+                TimeSpan expiryDuration = TimeSpan.FromMinutes(20);
+
+                (string token, long expiryMs) = new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }.GenerateAuthToken(RegionEndpoint.USEast1);
+                ValidateTokenSignature(token, expiryMs, expiryDuration);
+            }
+            finally
+            {
+                AWSConfigs.AWSCredentialsGenerators = originalFallbackList;
+            }
+        }
+
+        [Fact]
+        public void GenerateAuthToken_TestInjectedCredentials_CustomExpiryDuration()
+        {
+            TimeSpan expiryDuration = TimeSpan.FromMinutes(20);
+
+            (var token, long expiryMs) = new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }.GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1,false).GetAwaiter().GetResult();
+
+            ValidateTokenSignature(token, expiryMs, expiryDuration);
+        }
+
+        [Fact]
+        public void GenerateAuthToken_TestInjectedCredentialsWithSoonExpiration_CustomExpiryDuration()
+        {
+            DateTime now = DateTime.UtcNow;
+            TimeSpan ttl = TimeSpan.FromMinutes(5);
+
+            (var token, long expiryMs) = new AWSMSKAuthTokenGenerator(timeProvider: () => now) { ExpiryDuration = TimeSpan.FromMinutes(20) }
+                .GenerateAuthTokenFromCredentialsProvider(() => new SessionAWSCredentials("accessKey", "secretKey", "sessionToken") { Expiration = now + ttl }, RegionEndpoint.USEast1,
+                    false).GetAwaiter().GetResult();
+
+            ValidateTokenSignature(token, expiryMs, ttl);
+        }
+
+        [Fact]
+        public void GenerateAuthToken_TestInjectedCredentialsWithLongExpiration_CustomExpiryDuration()
+        {
+            TimeSpan expiryDuration = TimeSpan.FromMinutes(20);
+
+            (var token, long expiryMs) = new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }
+                .GenerateAuthTokenFromCredentialsProvider(
+                    () => new SessionAWSCredentials("accessKey", "secretKey", "sessionToken") { Expiration = DateTime.UtcNow.AddHours(6) },
+                    RegionEndpoint.USEast1, false).GetAwaiter().GetResult();
+
+            ValidateTokenSignature(token, expiryMs, expiryDuration);
+        }
+
+        [Fact]
+        public void GenerateAuthToken_RefreshingAwsCredentials_TestInjectedCredentialsWithLongExpiration_CustomExpiryDuration()
+        {
+            var credentials = new TestCredentials(DateTime.UtcNow.AddHours(6));
+
+            TimeSpan expiryDuration = TimeSpan.FromMinutes(20);
+
+            var mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration };
+
+            // First store credentials
+            mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProvider(() => credentials, RegionEndpoint.USEast1, false)
+                .GetAwaiter().GetResult();
+            (var token, long expiryMs) = mskAuthTokenGenerator
+                .GenerateAuthTokenFromCredentialsProvider(() => credentials, RegionEndpoint.USEast1, false).GetAwaiter()
+                .GetResult();
+
+            ValidateTokenSignature(token, expiryMs, expiryDuration);
+        }
+
+        [Fact]
+        public void GenerateAuthToken_RefreshingAwsCredentials_TestInjectedCredentialsNotExpiringSoon_CustomExpiryDuration()
+        {
+            DateTime now = DateTime.UtcNow;
+
+            var credentials = new TestCredentials(now.AddMinutes(29));
+
+            TimeSpan expiryDuration = TimeSpan.FromMinutes(20);
+
+            var mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator(timeProvider: () => now) { ExpiryDuration = expiryDuration };
+
+            // First store credentials
+            mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProvider(() => credentials, RegionEndpoint.USEast1, false)
+                .GetAwaiter().GetResult();
+            (var token, long expiryMs) = mskAuthTokenGenerator
+                .GenerateAuthTokenFromCredentialsProvider(() => credentials, RegionEndpoint.USEast1, false).GetAwaiter()
+                .GetResult();
+
+            ValidateTokenSignature(token, expiryMs, expiryDuration);
+        }
+
+        [Fact]
+        public void GenerateAuthToken_RefreshingAwsCredentials_TestInjectedCredentialsCloseToExpiring_CustomExpiryDuration()
+        {
+            DateTime now = DateTime.UtcNow;
+
+            var credentials = new TestCredentials(now.AddMinutes(16));
+
+            var mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator(timeProvider: () => now) { ExpiryDuration = TimeSpan.FromMinutes(20) };
+
+            // First store credentials
+            mskAuthTokenGenerator.GenerateAuthTokenFromCredentialsProvider(() => credentials, RegionEndpoint.USEast1, false)
+                .GetAwaiter().GetResult();
+            (var token, long expiryMs) = mskAuthTokenGenerator
+                .GenerateAuthTokenFromCredentialsProvider(() => credentials, RegionEndpoint.USEast1, false).GetAwaiter()
+                .GetResult();
+
+            ValidateTokenSignature(token, expiryMs, TimeSpan.FromMinutes(8.5));
+        }
+
+        [Fact]
+        public void GenerateAuthToken_RefreshingAwsCredentials_TestInjectedCredentialsAlreadyExpired_CustomExpiryDuration()
+        {
+            DateTime now = DateTime.UtcNow;
+            TimeSpan ttl = TimeSpan.FromMinutes(10);
+
+            var credentials = new TestCredentials(now + ttl);
+
+            var mskAuthTokenGenerator = new AWSMSKAuthTokenGenerator(timeProvider: () => now) { ExpiryDuration = TimeSpan.FromMinutes(20) };
 
             // First store credentials
             mskAuthTokenGenerator

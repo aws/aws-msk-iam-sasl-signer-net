@@ -27,7 +27,7 @@ public class AWSMSKAuthTokenGenerator
     private const string XAmzSecurityToken = "X-Amz-Security-Token";
     private const string HostnameStringFormat = "kafka.{0}.amazonaws.com";
 
-    private static readonly TimeSpan ExpiryDuration = TimeSpan.FromSeconds(900);
+    public TimeSpan ExpiryDuration { get; set; } = TimeSpan.FromSeconds(900);
 
     private AmazonSecurityTokenServiceClient? _stsClient;
     private RegionEndpoint? _stsClientRegion;
@@ -296,7 +296,8 @@ public class AWSMSKAuthTokenGenerator
 
     private TimeSpan GetTtl(AWSCredentials credentials)
     {
-        TimeSpan ttl = ExpiryDuration;
+        var expiryDuration = ExpiryDuration;
+        TimeSpan ttl = expiryDuration;
 
         if (credentials.Expiration is null)
         {
@@ -352,9 +353,10 @@ public class AWSMSKAuthTokenGenerator
             ttl = ttlCredential;
         }
 
-        if (ttl != ExpiryDuration)
+        if (ttl != expiryDuration)
         {
-            _logger.LogDebug("Lifetime of token is shorter than default of 900s: {lifetime}s",
+            _logger.LogDebug("Lifetime of token is shorter than set value of {configuredLifetime}s: {lifetime}s",
+                expiryDuration.TotalSeconds.ToString(CultureInfo.InvariantCulture),
                 ttl.TotalSeconds.ToString(CultureInfo.InvariantCulture));
         }
 
