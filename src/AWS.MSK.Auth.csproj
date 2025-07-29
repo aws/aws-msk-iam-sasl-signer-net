@@ -31,8 +31,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Core" Version="3.7.400.36" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.1" />
-    <PackageReference Include="AWSSDK.SecurityToken" Version="3.7.103.16" />
+    <PackageReference Include="AWSSDK.Core" Version="4.0.0.16" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.7" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.1.5" />
     </ItemGroup>
 </Project>
