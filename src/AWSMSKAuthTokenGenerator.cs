@@ -144,7 +144,8 @@ public class AWSMSKAuthTokenGenerator
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = GetStsClient(region).AssumeRoleAsync(assumeRoleReq).GetAwaiter().GetResult();
+        using var stsClient = GetStsClient(region);
+        var assumeRoleResponse = stsClient.AssumeRoleAsync(assumeRoleReq).GetAwaiter().GetResult();
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
@@ -174,7 +175,8 @@ public class AWSMSKAuthTokenGenerator
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = await GetStsClient(region).AssumeRoleAsync(assumeRoleReq);
+        using var stsClient = GetStsClient(region);
+        var assumeRoleResponse = await stsClient.AssumeRoleAsync(assumeRoleReq);
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
