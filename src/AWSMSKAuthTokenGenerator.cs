@@ -313,52 +313,10 @@ public class AWSMSKAuthTokenGenerator
             return ttl;
         }
 
-        // Check if this is RefreshingAWSCredentials credential in which case real expiration is further in future
-        if (credentials is RefreshingAWSCredentials refreshingAwsCredentials)
-        {
-            TimeSpan preemptExpiryTime = refreshingAwsCredentials.PreemptExpiryTime;
-            TimeSpan halfPreemptExpiryTime = TimeSpan.FromSeconds(preemptExpiryTime.TotalSeconds / 2);
-
-            // There are a few cases handled here:
-            // - Credential is not particularly close to expiring per Expiration property
-            // - Credential is close to expiring per Expiration property
-            // - Credential has already expired per Expiration property
-            //
-            // Credential is not particularly close to expiring per Expiration property
-            // This is determined if the TTL based on Expiration is more than half the preempt expiry time. In this case
-            // let's just extend the TTL by the preempt expiry time and then the token will "expire" within the preempt
-            // range but not extremely close to when the actual credential expires.
-            //
-            // Credential is close to expiring per Expiration property
-            // In this case a new token based on the Expiration property would be short-lived which is undesirable. Even
-            // if we add back the preempt expiry time it will then be close to the actual expiration of the credential.
-            // Therefore, we only extend the TTL by half the preempt expiry time so that the token will expire well
-            // before the credential actually expires allowing the background refresh time to run.
-            //
-            // Credential has already expired per Expiration property
-            // The TTL extensions from the two cases above will result in some tokens showing as already expired. In
-            // this case the TTL will be negative, so simply adding the preempt expiry time to this negative TTL will
-            // give the actual expiration of the credential, and the background refresh will be triggered at this moment.
-            TimeSpan tentativeNewTtl = ttlCredential + (ttlCredential >= halfPreemptExpiryTime || ttlCredential < TimeSpan.Zero
-                ? preemptExpiryTime
-                : halfPreemptExpiryTime);
-
-            if (tentativeNewTtl < ttl)
-            {
-                ttl = tentativeNewTtl;
-            }
-        }
-        else
-        {
-            ttl = ttlCredential;
-        }
-
-        if (ttl != expiryDuration)
-        {
-            _logger.LogDebug("Lifetime of token is shorter than set value of {configuredLifetime}s: {lifetime}s",
-                expiryDuration.TotalSeconds.ToString(CultureInfo.InvariantCulture),
-                ttl.TotalSeconds.ToString(CultureInfo.InvariantCulture));
-        }
+        ttl = ttlCredential;
+        _logger.LogDebug("Lifetime of token is shorter than set value of {configuredLifetime}s: {lifetime}s",
+            expiryDuration.TotalSeconds.ToString(CultureInfo.InvariantCulture),
+            ttl.TotalSeconds.ToString(CultureInfo.InvariantCulture));
 
         return ttl;
     }
