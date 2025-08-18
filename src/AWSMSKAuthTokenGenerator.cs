@@ -33,6 +33,7 @@ public class AWSMSKAuthTokenGenerator
     private RegionEndpoint? _stsClientRegion;
     private readonly ILogger<AWSMSKAuthTokenGenerator> _logger;
     private readonly Func<DateTime> _timeProvider;
+    private readonly bool _stsClientProvided;
 
     /// <summary>
     /// Constructor for AWSMSKAuthTokenGenerator.
@@ -45,6 +46,7 @@ public class AWSMSKAuthTokenGenerator
         ILoggerFactory? loggerFactory = null,
         Func<DateTime>? timeProvider = null)
     {
+        _stsClientProvided = stsClient is not null;
         _stsClient = stsClient;
         _stsClientRegion = stsClient?.Config?.RegionEndpoint;
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<AWSMSKAuthTokenGenerator>();
@@ -114,13 +116,15 @@ public class AWSMSKAuthTokenGenerator
 
     private AmazonSecurityTokenServiceClient GetStsClient(RegionEndpoint region)
     {
-        if (_stsClient is null || _stsClientRegion != region)
+        // If the STS client was provided via the constructor, always use it
+        if (!_stsClientProvided && (_stsClient is null || _stsClientRegion != region))
         {
+            _stsClient?.Dispose();
             _stsClient = new AmazonSecurityTokenServiceClient(region);
             _stsClientRegion = region;
         }
 
-        return _stsClient;
+        return _stsClient!;
     }
 
     /// <summary>

@@ -129,20 +129,58 @@ namespace AWS.MSK.Auth.Test
         [Fact]
         public void GenerateAuthToken_TestStsRoles()
         {
-            AssumeRoleResponse assumeRoleResponse = new AssumeRoleResponse
+            var assumeRoleResponse = new AssumeRoleResponse
             {
-                Credentials = new Credentials("accessKey", "secretKey", "sessionToken", DateTime.Now)
+                Credentials = new Credentials("accessKey", "secretKey", "sessionToken", DateTime.UtcNow)
             };
 
             RegionEndpoint region = RegionEndpoint.USEast1;
 
             var stsClientMock = new Mock<AmazonSecurityTokenServiceClient>(region);
-
             stsClientMock.Setup(m => m.AssumeRoleAsync(It.Is<AssumeRoleRequest>(r => r.RoleArn == "arn:aws:iam::123456789101:role/MSKRole" && r.RoleSessionName == "mySession"), CancellationToken.None)).Returns(Task.FromResult(assumeRoleResponse));
 
             (var token, long expiryMs) = new AWSMSKAuthTokenGenerator(stsClientMock.Object).GenerateAuthTokenFromRole(region, "arn:aws:iam::123456789101:role/MSKRole", "mySession");
 
             ValidateTokenSignature(token, expiryMs);
+        }
+
+        [Fact]
+        public void GenerateAuthToken_VerifyStsClientAlwaysUsedWhenSupplied()
+        {
+            var assumeRoleResponse = new AssumeRoleResponse
+            {
+                Credentials = new Credentials("accessKey", "secretKey", "sessionToken", DateTime.UtcNow)
+            };
+
+            var stsClientMock = new Mock<AmazonSecurityTokenServiceClient>(RegionEndpoint.USEast1);
+            stsClientMock
+                .Setup(m => m.AssumeRoleAsync(
+                    It.Is<AssumeRoleRequest>(r =>
+                        r.RoleArn == "arn:aws:iam::123456789101:role/MSKRole" && r.RoleSessionName == "mySession"),
+                    CancellationToken.None)).Returns(Task.FromResult(assumeRoleResponse));
+            stsClientMock
+                .Setup(m => m.AssumeRoleAsync(
+                    It.Is<AssumeRoleRequest>(r =>
+                        r.RoleArn == "arn:aws:iam::123456789101:role/MSKRole2" && r.RoleSessionName == "mySession2"),
+                    CancellationToken.None)).Returns(Task.FromResult(assumeRoleResponse));
+
+            var awsMskAuthTokenGenerator = new AWSMSKAuthTokenGenerator(stsClientMock.Object);
+
+            awsMskAuthTokenGenerator.GenerateAuthTokenFromRole(RegionEndpoint.USEast1,
+                "arn:aws:iam::123456789101:role/MSKRole", "mySession");
+            stsClientMock.Verify(m =>
+                m.AssumeRoleAsync(
+                    It.Is<AssumeRoleRequest>(r =>
+                        r.RoleArn == "arn:aws:iam::123456789101:role/MSKRole" && r.RoleSessionName == "mySession"),
+                    CancellationToken.None));
+
+            awsMskAuthTokenGenerator.GenerateAuthTokenFromRole(RegionEndpoint.USEast1,
+                "arn:aws:iam::123456789101:role/MSKRole2", "mySession2");
+            stsClientMock.Verify(m =>
+                m.AssumeRoleAsync(
+                    It.Is<AssumeRoleRequest>(r =>
+                        r.RoleArn == "arn:aws:iam::123456789101:role/MSKRole2" && r.RoleSessionName == "mySession2"),
+                    CancellationToken.None));
         }
 
         [Fact]
