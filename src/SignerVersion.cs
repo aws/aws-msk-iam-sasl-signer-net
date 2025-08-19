@@ -1,12 +1,9 @@
 ﻿// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-using System;
+namespace AWS.MSK.Auth;
 
-namespace AWS.MSK.Auth
+public static class SignerVersion
 {
-	public static class SignerVersion
-	{
-		public static String CurrentVersion = "1.1.0";
-	}
+	public const String CurrentVersion = "1.1.1";
 }

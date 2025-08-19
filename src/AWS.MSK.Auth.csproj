@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
       <Nullable>enable</Nullable>
     <LangVersion>10.0</LangVersion>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Title>AWS MSK Signer library for IAM Authentication</Title>
     <Description>This libary vends encoded IAM v4 signatures which can be used as IAM Auth tokens to authenticate against an MSK cluster.</Description>
     <Authors>Amazon Web Services</Authors>

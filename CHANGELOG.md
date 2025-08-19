@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 (2025-08-18)
+
+* Remove special handling for `RefreshingAWSCredentials`
+* Dispose of STS clients before losing reference
+
 ## 1.1.0 (2025-07-29)
 
 * Bump all dependency versions
