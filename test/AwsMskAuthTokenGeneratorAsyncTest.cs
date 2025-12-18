@@ -202,12 +202,16 @@ public static class AwsMskAuthTokenGeneratorAsyncTest
         var parsedUrl = new Uri(Encoding.UTF8.GetString(decoded, 0, decoded.Length));
         var queryParams = HttpUtility.ParseQueryString(parsedUrl.Query);
         string[] credentialsTokens = queryParams["X-Amz-Credential"]!.Split('/');
-
+        
+        // Validate X-Amz-Expires is an integer value (no decimal point)
+        var xAmzExpires = queryParams["X-Amz-Expires"]!;
+        Assert.True(int.TryParse(xAmzExpires, out int xAmzExpiresInt), $"X-Amz-Expires must be an integer, but was: {xAmzExpires}");
+        var expectedTtlSeconds = expectedTtl is not null ? (int)expectedTtl.Value.TotalSeconds : 900;
+        Assert.Equal(expectedTtlSeconds, xAmzExpiresInt);
         Assert.Equal("kafka.us-east-1.amazonaws.com", parsedUrl.Host);
         Assert.Equal("kafka-cluster:Connect", queryParams["Action"]);
         Assert.Equal("host", queryParams["X-Amz-SignedHeaders"]);
         Assert.Equal("AWS4-HMAC-SHA256", queryParams["X-Amz-Algorithm"]);
-        Assert.Equal(expectedTtl is not null ? expectedTtl.Value.TotalSeconds.ToString(CultureInfo.InvariantCulture) : "900", queryParams["X-Amz-Expires"]);
         Assert.Equal("accessKey", credentialsTokens[0]);
         Assert.Equal("us-east-1", credentialsTokens[2]);
         Assert.Equal("kafka-cluster", credentialsTokens[3]);
@@ -217,7 +221,7 @@ public static class AwsMskAuthTokenGeneratorAsyncTest
         Assert.True(Regex.IsMatch(queryParams["X-Amz-Date"]!, "(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z", RegexOptions.None));
         Assert.All(queryParams.AllKeys, key => Assert.Contains(key!, Sigv4Keys));
 
-        long expectedExpiryMs = new DateTimeOffset(DateTime.ParseExact(queryParams["X-Amz-Date"]!, "yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture).Add(expectedTtl ?? TimeSpan.FromSeconds(900))).ToUnixTimeMilliseconds();
+        long expectedExpiryMs = (new DateTimeOffset(DateTime.ParseExact(queryParams["X-Amz-Date"]!, "yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture)).ToUnixTimeSeconds() + expectedTtlSeconds) * 1000;
         Assert.Equal(expectedExpiryMs, expiryMs);
     }
 

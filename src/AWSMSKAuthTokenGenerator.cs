@@ -263,6 +263,7 @@ public class AWSMSKAuthTokenGenerator
         }
 
         TimeSpan ttl = GetTtl(credentials);
+        var ttlSeconds = (int)ttl.TotalSeconds;
 
         var immutableCredentials = useAsync ? await credentials.GetCredentialsAsync() : credentials.GetCredentials();
 
@@ -273,7 +274,7 @@ public class AWSMSKAuthTokenGenerator
 
         request.UseQueryString = true;
         request.HttpMethod = HttpMethod;
-        request.Parameters.Add(XAmzExpires, ttl.TotalSeconds.ToString(CultureInfo.InvariantCulture));
+        request.Parameters.Add(XAmzExpires, ttlSeconds.ToString(CultureInfo.InvariantCulture));
         request.Parameters.Add(ActionKey, ActionValue);
         var hostName = string.Format(HostnameStringFormat, region.SystemName);
         request.Endpoint = new UriBuilder(Scheme, hostName).Uri;
@@ -294,7 +295,7 @@ public class AWSMSKAuthTokenGenerator
 
         var byteArray = Encoding.UTF8.GetBytes(authTokenString);
 
-        var expiryMs = new DateTimeOffset(signingResult.DateTime.Add(ttl)).ToUnixTimeSeconds() * 1000;
+        var expiryMs = (new DateTimeOffset(signingResult.DateTime).ToUnixTimeSeconds() + ttlSeconds) * 1000;
         return (Convert.ToBase64String(byteArray).Replace('+', '-').Replace('/', '_').TrimEnd('='), expiryMs);
     }
 
