@@ -202,7 +202,7 @@ public static class AwsMskAuthTokenGeneratorAsyncTest
         var parsedUrl = new Uri(Encoding.UTF8.GetString(decoded, 0, decoded.Length));
         var queryParams = HttpUtility.ParseQueryString(parsedUrl.Query);
         string[] credentialsTokens = queryParams["X-Amz-Credential"]!.Split('/');
-        
+
         // Validate X-Amz-Expires is an integer value (no decimal point)
         var xAmzExpires = queryParams["X-Amz-Expires"]!;
         Assert.True(int.TryParse(xAmzExpires, out int xAmzExpiresInt), $"X-Amz-Expires must be an integer, but was: {xAmzExpires}");

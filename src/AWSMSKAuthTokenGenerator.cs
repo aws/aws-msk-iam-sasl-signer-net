@@ -64,7 +64,7 @@ public class AWSMSKAuthTokenGenerator
             ((IAmazonWebServiceRequest)this).SignatureVersion = SignatureVersion.SigV4;
     }
 
-#region GenerateAuthToken
+    #region GenerateAuthToken
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster.
@@ -110,9 +110,9 @@ public class AWSMSKAuthTokenGenerator
         return await GenerateAuthTokenFromCredentialsProvider(() => credentials, region);
     }
 
-#endregion GenerateAuthToken
+    #endregion GenerateAuthToken
 
-#region GenerateAuthTokenFromRole
+    #region GenerateAuthTokenFromRole
 
     private AmazonSecurityTokenServiceClient GetStsClient(RegionEndpoint region)
     {
@@ -187,9 +187,9 @@ public class AWSMSKAuthTokenGenerator
                 stsCredentials.SessionToken), region);
     }
 
-#endregion GenerateAuthTokenFromRole
+    #endregion GenerateAuthTokenFromRole
 
-#region GenerateAuthTokenFromProfile
+    #region GenerateAuthTokenFromProfile
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile
@@ -233,7 +233,7 @@ public class AWSMSKAuthTokenGenerator
         throw new ArgumentException($"Could not find credentials using profile {profileName}");
     }
 
-#endregion GenerateAuthTokenFromProfile
+    #endregion GenerateAuthTokenFromProfile
 
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using client provided AWS credentials.
