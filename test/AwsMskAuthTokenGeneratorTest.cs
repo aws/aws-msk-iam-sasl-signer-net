@@ -45,7 +45,7 @@ public static class AwsMskAuthTokenGeneratorTest
     public static void GenerateAuthToken_TestInjectedCredentials()
     {
 #pragma warning disable xUnit1031
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1,false).GetAwaiter().GetResult();
+        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1, false).GetAwaiter().GetResult();
 #pragma warning restore xUnit1031
 
         ValidateTokenSignature(token, expiryMs);
@@ -105,7 +105,7 @@ public static class AwsMskAuthTokenGeneratorTest
         TimeSpan expiryDuration = TimeSpan.FromMinutes(20);
 
 #pragma warning disable xUnit1031
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }.GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1,false).GetAwaiter().GetResult();
+        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }.GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1, false).GetAwaiter().GetResult();
 #pragma warning restore xUnit1031
 
         ValidateTokenSignature(token, expiryMs, expiryDuration);
@@ -201,7 +201,7 @@ public static class AwsMskAuthTokenGeneratorTest
     [Fact]
     public static void GenerateAuthToken_NullCredentials_ThrowsArgumentException()
     {
-        var exception = Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(null!, RegionEndpoint.USEast1,false).GetAwaiter().GetResult());
+        var exception = Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(null!, RegionEndpoint.USEast1, false).GetAwaiter().GetResult());
         Assert.Contains("credentialsProvider", exception.Message);
     }
 
@@ -219,6 +219,30 @@ public static class AwsMskAuthTokenGeneratorTest
         Assert.Contains("credentials", exception.Message);
     }
 
+    [Fact]
+    public static void GenerateAuthToken_CredentialExpirationWithFractionalSeconds_XAmzExpiresIsInteger()
+    {
+        // This test verifies that X-Amz-Expires is always an integer even when
+        // credential expiration results in fractional seconds for the TTL.
+        // Before the fix, this would produce X-Amz-Expires like "299.7" instead of "299".
+        var now = DateTime.UtcNow;
+        var ttlWithFractionalSeconds = TimeSpan.FromSeconds(299.7);
+
+        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator(timeProvider: () => now)
+            .GenerateAuthTokenFromCredentialsProvider(
+                () => new SessionAWSCredentials("accessKey", "secretKey", "sessionToken")
+                {
+                    Expiration = now + ttlWithFractionalSeconds
+                },
+                RegionEndpoint.USEast1,
+#pragma warning disable xUnit1031
+                false).GetAwaiter().GetResult();
+#pragma warning restore xUnit1031
+
+        // The TTL should be truncated to 299 seconds (not 299.7 or rounded to 300)
+        ValidateTokenSignature(token, expiryMs, TimeSpan.FromSeconds(299));
+    }
+
     private static void ValidateTokenSignature(string token, long expiryMs, TimeSpan? expectedTtl = null)
     {
         byte[] decoded = Decode(token);
@@ -231,7 +255,12 @@ public static class AwsMskAuthTokenGeneratorTest
         Assert.Equal("kafka-cluster:Connect", queryParams["Action"]);
         Assert.Equal("host", queryParams["X-Amz-SignedHeaders"]);
         Assert.Equal("AWS4-HMAC-SHA256", queryParams["X-Amz-Algorithm"]);
-        Assert.Equal(expectedTtl is not null ? expectedTtl.Value.TotalSeconds.ToString(CultureInfo.InvariantCulture) : "900", queryParams["X-Amz-Expires"]);
+
+        // Validate X-Amz-Expires is an integer value (no decimal point)
+        string xAmzExpires = queryParams["X-Amz-Expires"]!;
+        Assert.True(int.TryParse(xAmzExpires, out int xAmzExpiresInt), $"X-Amz-Expires must be an integer, but was: {xAmzExpires}");
+        int expectedTtlSeconds = expectedTtl is not null ? (int)expectedTtl.Value.TotalSeconds : 900;
+        Assert.Equal(expectedTtlSeconds, xAmzExpiresInt);
         Assert.Equal("accessKey", credentialsTokens[0]);
         Assert.Equal("us-east-1", credentialsTokens[2]);
         Assert.Equal("kafka-cluster", credentialsTokens[3]);
@@ -241,7 +270,7 @@ public static class AwsMskAuthTokenGeneratorTest
         Assert.True(Regex.IsMatch(queryParams["X-Amz-Date"]!, "(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})Z", RegexOptions.None));
         Assert.All(queryParams.AllKeys, key => Assert.Contains(key!, Sigv4Keys));
 
-        long expectedExpiryMs = new DateTimeOffset(DateTime.ParseExact(queryParams["X-Amz-Date"]!, "yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture).Add(expectedTtl ?? TimeSpan.FromSeconds(900))).ToUnixTimeMilliseconds();
+        long expectedExpiryMs = (new DateTimeOffset(DateTime.ParseExact(queryParams["X-Amz-Date"]!, "yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture)).ToUnixTimeSeconds() + expectedTtlSeconds) * 1000;
         Assert.Equal(expectedExpiryMs, expiryMs);
     }
 
@@ -271,4 +300,5 @@ public static class AwsMskAuthTokenGeneratorTest
         char[] array = list.ToArray();
         return Convert.FromBase64CharArray(array, 0, array.Length);
     }
+
 }
