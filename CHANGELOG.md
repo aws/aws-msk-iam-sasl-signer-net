@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2 (2026-01-15)
+
+* Bump AWSSDK.Core from 4.0.0.16 to 4.0.3.5
+* Ensure X-Amz-Expires header is integer
+
 ## 1.1.1 (2025-08-18)
 
 * Remove special handling for `RefreshingAWSCredentials`
