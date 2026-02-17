@@ -12,12 +12,19 @@ using Amazon.Runtime.Internal.Auth;
 using Amazon.Runtime.Internal.Util;
 using Amazon.SecurityToken;
 using Amazon.SecurityToken.Model;
-using AWS.MSK.Auth;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-public class AWSMSKAuthTokenGenerator
+namespace AWS.MSK.Auth;
+
+/// <summary>
+/// Generates pre-signed authentication tokens for AWS MSK clusters using IAM credentials.
+/// This class is thread-safe and designed to be used as a long-lived singleton.
+/// </summary>
+public sealed class AWSMSKAuthTokenGenerator : IDisposable
 {
+    private const int MinTtlSeconds = 1;
+    private const int MaxTtlSeconds = 604800; // 7 days — AWS SigV4 maximum
     private const string ServiceName = "kafka-cluster";
     private const string HttpMethod = "GET";
     private const string Scheme = "https";
@@ -26,14 +33,40 @@ public class AWSMSKAuthTokenGenerator
     private const string XAmzExpires = "X-Amz-Expires";
     private const string XAmzSecurityToken = "X-Amz-Security-Token";
     private const string HostnameStringFormat = "kafka.{0}.amazonaws.com";
+    private const string DefaultSession = "MSKSASLDefaultSession";
 
-    public TimeSpan ExpiryDuration { get; set; } = TimeSpan.FromSeconds(900);
+    private static readonly string UserAgentString = $"User-Agent={Uri.EscapeDataString($"aws-msk-iam-sasl-signer-net-{SignerVersion.CurrentVersion}")}";
+
+    private TimeSpan _expiryDuration = TimeSpan.FromSeconds(900);
+
+    /// <summary>
+    /// The duration for which the generated auth token is valid.
+    /// Must be between 1 second and 604800 seconds (7 days).
+    /// Default: 900 seconds (15 minutes).
+    /// </summary>
+    public TimeSpan ExpiryDuration
+    {
+        get => _expiryDuration;
+        set
+        {
+            if (value.TotalSeconds < MinTtlSeconds || value.TotalSeconds > MaxTtlSeconds)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(ExpiryDuration),
+                    $"ExpiryDuration must be between {MinTtlSeconds}s and {MaxTtlSeconds}s, but was {value.TotalSeconds}s.");
+            }
+
+            _expiryDuration = value;
+        }
+    }
 
     private AmazonSecurityTokenServiceClient? _stsClient;
     private RegionEndpoint? _stsClientRegion;
+    private readonly object _stsClientLock = new();
     private readonly ILogger<AWSMSKAuthTokenGenerator> _logger;
     private readonly Func<DateTime> _timeProvider;
     private readonly bool _stsClientProvided;
+    private bool _disposed;
 
     /// <summary>
     /// Constructor for AWSMSKAuthTokenGenerator.
@@ -56,9 +89,9 @@ public class AWSMSKAuthTokenGenerator
     /// <summary>
     /// AWS4PreSignedUrlSigner is built around operation request objects.
     /// This request type will only be used to generate the signed token.
-    /// It will never be used to make an actual request to cluster
+    /// It will never be used to make an actual request to a cluster.
     /// </summary>
-    private class GenerateMskAuthTokenRequest : AmazonWebServiceRequest
+    private sealed class GenerateMskAuthTokenRequest : AmazonWebServiceRequest
     {
         public GenerateMskAuthTokenRequest() =>
             ((IAmazonWebServiceRequest)this).SignatureVersion = SignatureVersion.SigV4;
@@ -76,38 +109,26 @@ public class AWSMSKAuthTokenGenerator
     /// </summary>
     /// <param name="region">Region of the MSK cluster</param>
     /// <param name="awsDebugCreds">Whether to log caller identity used for generating auth token. Default value is false.
-    ///                             Note that this only works when LogLevel for logger is configured as Debug.
-    ///                             Using this in Production is discouraged as it creates a new STS client on every invocation</param>
-    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public (string, long) GenerateAuthToken(RegionEndpoint region, bool awsDebugCreds = false)
+    ///     Note that this only works when LogLevel for logger is configured as Debug.
+    ///     Using this in Production is discouraged as it creates a new STS client on every invocation.</param>
+    /// <returns>A tuple containing the auth token string and its expiry time in Unix milliseconds.</returns>
+    public (string Token, long ExpiryMs) GenerateAuthToken(RegionEndpoint region, bool awsDebugCreds = false)
     {
         AWSCredentials credentials = DefaultAWSCredentialsIdentityResolver.GetCredentials();
 
-        LogCredentialsIdentity(credentials, region, awsDebugCreds).GetAwaiter().GetResult();
+        LogCredentialsIdentity(credentials, region, awsDebugCreds).ConfigureAwait(false).GetAwaiter().GetResult();
 
-        return GenerateAuthTokenFromCredentialsProvider(() => credentials, region, false).GetAwaiter().GetResult();
+        return GenerateAuthTokenFromCredentialsProvider(() => credentials, region, false).ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    /// Generate a token for IAM authentication to an MSK cluster.
-    /// <remarks>
-    /// Token generation requires AWSCredentials and an AWS RegionEndpoint.
-    /// AWSCredentials will be loaded from the application's default configuration,
-    /// and if unsuccessful from the Instance Profile service on an EC2 instance.
-    /// </remarks>
-    /// </summary>
-    /// <param name="region">Region of the MSK cluster</param>
-    /// <param name="awsDebugCreds">Whether to log caller identity used for generating auth token. Default value is false.
-    ///                             Note that this only works when LogLevel for logger is configured as Debug.
-    ///                             Using this in Production is discouraged as it creates a new STS client on every invocation</param>
-    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public async Task<(string, long)> GenerateAuthTokenAsync(RegionEndpoint region, bool awsDebugCreds = false)
+    /// <inheritdoc cref="GenerateAuthToken"/>
+    public async Task<(string Token, long ExpiryMs)> GenerateAuthTokenAsync(RegionEndpoint region, bool awsDebugCreds = false)
     {
-        AWSCredentials credentials = await DefaultAWSCredentialsIdentityResolver.GetCredentialsAsync();
+        AWSCredentials credentials = await DefaultAWSCredentialsIdentityResolver.GetCredentialsAsync().ConfigureAwait(false);
 
-        await LogCredentialsIdentity(credentials, region, awsDebugCreds);
+        await LogCredentialsIdentity(credentials, region, awsDebugCreds).ConfigureAwait(false);
 
-        return await GenerateAuthTokenFromCredentialsProvider(() => credentials, region);
+        return await GenerateAuthTokenFromCredentialsProvider(() => credentials, region).ConfigureAwait(false);
     }
 
     #endregion GenerateAuthToken
@@ -116,12 +137,24 @@ public class AWSMSKAuthTokenGenerator
 
     private AmazonSecurityTokenServiceClient GetStsClient(RegionEndpoint region)
     {
-        // If the STS client was provided via the constructor, always use it
-        if (!_stsClientProvided && (_stsClient is null || _stsClientRegion != region))
+        if (_stsClientProvided)
         {
-            _stsClient?.Dispose();
-            _stsClient = new AmazonSecurityTokenServiceClient(region);
-            _stsClientRegion = region;
+            return _stsClient!;
+        }
+
+        // Double-checked lock to ensure thread safety when creating/replacing the STS client
+        if (_stsClient is null || _stsClientRegion != region)
+        {
+            lock (_stsClientLock)
+            {
+                if (_stsClient is null || _stsClientRegion != region)
+                {
+                    var oldClient = _stsClient;
+                    _stsClient = new AmazonSecurityTokenServiceClient(region);
+                    _stsClientRegion = region;
+                    oldClient?.Dispose();
+                }
+            }
         }
 
         return _stsClient!;
@@ -139,8 +172,8 @@ public class AWSMSKAuthTokenGenerator
     /// <param name="roleArn">ARN of the role which needs to be assumed for signing the request</param>
     /// <param name="sessionName">An optional session name</param>
     ///
-    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public (string, long) GenerateAuthTokenFromRole(RegionEndpoint region, string roleArn, string sessionName = "MSKSASLDefaultSession")
+    /// <returns>A tuple containing the auth token string and its expiry time in Unix milliseconds.</returns>
+    public (string Token, long ExpiryMs) GenerateAuthTokenFromRole(RegionEndpoint region, string roleArn, string sessionName = DefaultSession)
     {
         var assumeRoleReq = new AssumeRoleRequest
         {
@@ -148,13 +181,15 @@ public class AWSMSKAuthTokenGenerator
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = GetStsClient(region).AssumeRoleAsync(assumeRoleReq).GetAwaiter().GetResult();
+        var assumeRoleResponse = GetStsClient(region).AssumeRoleAsync(assumeRoleReq)
+            .ConfigureAwait(false).GetAwaiter().GetResult();
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
         return GenerateAuthTokenFromCredentialsProvider(
-            () => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey, stsCredentials.SessionToken), region, false)
-            .GetAwaiter().GetResult();
+                () => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey,
+                    stsCredentials.SessionToken), region, false)
+            .ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -169,8 +204,8 @@ public class AWSMSKAuthTokenGenerator
     /// <param name="roleArn">ARN of the role which needs to be assumed for signing the request</param>
     /// <param name="sessionName">An optional session name</param>
     ///
-    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public async Task<(string, long)> GenerateAuthTokenFromRoleAsync(RegionEndpoint region, string roleArn, string sessionName = "MSKSASLDefaultSession")
+    /// <returns>A tuple containing the auth token string and its expiry time in Unix milliseconds.</returns>
+    public async Task<(string Token, long ExpiryMs)> GenerateAuthTokenFromRoleAsync(RegionEndpoint region, string roleArn, string sessionName = DefaultSession)
     {
         var assumeRoleReq = new AssumeRoleRequest
         {
@@ -178,13 +213,13 @@ public class AWSMSKAuthTokenGenerator
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = await GetStsClient(region).AssumeRoleAsync(assumeRoleReq);
+        var assumeRoleResponse = await GetStsClient(region).AssumeRoleAsync(assumeRoleReq).ConfigureAwait(false);
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
         return await GenerateAuthTokenFromCredentialsProvider(
             () => new SessionAWSCredentials(stsCredentials.AccessKeyId, stsCredentials.SecretAccessKey,
-                stsCredentials.SessionToken), region);
+                stsCredentials.SessionToken), region).ConfigureAwait(false);
     }
 
     #endregion GenerateAuthTokenFromRole
@@ -192,42 +227,42 @@ public class AWSMSKAuthTokenGenerator
     #region GenerateAuthTokenFromProfile
 
     /// <summary>
-    /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile
+    /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile.
     /// <remarks>
-    /// This method generates an Auth token using and IAM Profile
+    /// This method generates an auth token using an IAM Profile.
     /// </remarks>
     /// </summary>
-    /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile</param>
-    /// <param name="region">Region of the MSK cluster</param>
-    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public (string, long) GenerateAuthTokenFromProfile(string profileName, RegionEndpoint region)
+    /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile.</param>
+    /// <param name="region">Region of the MSK cluster.</param>
+    /// <returns>A tuple containing the auth token string and its expiry time in Unix milliseconds.</returns>
+    public (string Token, long ExpiryMs) GenerateAuthTokenFromProfile(string profileName, RegionEndpoint region)
     {
         var chain = new CredentialProfileStoreChain();
 
         if (chain.TryGetAWSCredentials(profileName, out var awsCredentials))
         {
-            return GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region, false).GetAwaiter().GetResult();
+            return GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region, false).ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         throw new ArgumentException($"Could not find credentials using profile {profileName}");
     }
 
     /// <summary>
-    /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile
+    /// Generate a token for IAM authentication to an MSK cluster using an IAM Profile.
     /// <remarks>
-    /// This method generates an Auth token using and IAM Profile
+    /// This method generates an auth token using an IAM Profile.
     /// </remarks>
     /// </summary>
-    /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile</param>
-    /// <param name="region">Region of the MSK cluster</param>
-    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public Task<(string, long)> GenerateAuthTokenFromProfileAsync(string profileName, RegionEndpoint region)
+    /// <param name="profileName">AWS Credentials to sign the request will be fetched from this profile.</param>
+    /// <param name="region">Region of the MSK cluster.</param>
+    /// <returns>A tuple containing the auth token string and its expiry time in Unix milliseconds.</returns>
+    public async Task<(string Token, long ExpiryMs)> GenerateAuthTokenFromProfileAsync(string profileName, RegionEndpoint region)
     {
         var chain = new CredentialProfileStoreChain();
 
         if (chain.TryGetAWSCredentials(profileName, out var awsCredentials))
         {
-            return GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region).AsTask();
+            return await GenerateAuthTokenFromCredentialsProvider(() => awsCredentials, region).ConfigureAwait(false);
         }
 
         throw new ArgumentException($"Could not find credentials using profile {profileName}");
@@ -236,67 +271,84 @@ public class AWSMSKAuthTokenGenerator
     #endregion GenerateAuthTokenFromProfile
 
     /// <summary>
-    /// Generate a token for IAM authentication to an MSK cluster using client provided AWS credentials.
-    /// <remarks> </remarks>
+    /// Generate a token for IAM authentication to an MSK cluster using client-provided AWS credentials.
     /// </summary>
-    /// <param name="credentialsProvider">A Function which returns AWSCredentials to be used for signing the request</param>
-    /// <param name="region">Region of the MSK cluster</param>
-    /// <param name="useAsync">Specifies to use async model</param>
-    /// <returns> A tuple containing Auth token in string format and it's expiry time </returns>
-    public async ValueTask<(string, long)> GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region, bool useAsync = true)
+    /// <param name="credentialsProvider">A function that returns <see cref="AWSCredentials"/> to be used for signing the request.</param>
+    /// <param name="region">Region of the MSK cluster.</param>
+    /// <param name="useAsync">When <c>true</c>, uses async credential resolution; when <c>false</c>, uses synchronous.</param>
+    /// <returns>A tuple containing the auth token string and its expiry time in Unix milliseconds.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="credentialsProvider"/>, <paramref name="region"/>, or the returned credentials are null.</exception>
+    public async ValueTask<(string Token, long ExpiryMs)> GenerateAuthTokenFromCredentialsProvider(Func<AWSCredentials> credentialsProvider, RegionEndpoint region, bool useAsync = true)
     {
-        if (credentialsProvider == null)
+        if (credentialsProvider is null)
         {
             throw new ArgumentNullException(nameof(credentialsProvider));
         }
 
-        if (region == null)
+        if (region is null)
         {
             throw new ArgumentNullException(nameof(region));
         }
 
-        AWSCredentials credentials = credentialsProvider.Invoke();
+        AWSCredentials credentials = credentialsProvider();
 
-        if (credentials == null)
+        if (credentials is null)
         {
             throw new ArgumentNullException(nameof(credentials));
         }
 
+        // IMPORTANT: Resolve immutable credentials FIRST, before computing TTL.
+        // GetCredentialsAsync() may trigger a background refresh of expiring credentials
+        // (especially in AWS SDK v4 with ECS/EC2 instance roles). If we computed TTL
+        // before resolving, we'd read the OLD expiration (possibly near-zero or negative)
+        // but then sign with the FRESH credentials — producing a token that expires immediately.
+        var immutableCredentials = useAsync
+            ? await credentials.GetCredentialsAsync().ConfigureAwait(false)
+            : credentials.GetCredentials();
+
+        // Now compute TTL from the (possibly refreshed) credential state
         TimeSpan ttl = GetTtl(credentials);
         var ttlSeconds = (int)ttl.TotalSeconds;
 
-        var immutableCredentials = useAsync ? await credentials.GetCredentialsAsync() : credentials.GetCredentials();
+        _logger.LogDebug("Generating auth token using credentials with access key id: {AccessKey}", immutableCredentials.AccessKey);
 
-        _logger.LogDebug("Generating auth token using credentials with access key id: {accessKey}", immutableCredentials.AccessKey);
+        IRequest request = new DefaultRequest(new GenerateMskAuthTokenRequest(), ServiceName)
+        {
+            UseQueryString = true,
+            HttpMethod = HttpMethod,
+            Endpoint = new UriBuilder(Scheme, string.Format(CultureInfo.InvariantCulture, HostnameStringFormat, region.SystemName)).Uri
+        };
 
-        var authTokenRequest = new GenerateMskAuthTokenRequest();
-        IRequest request = new DefaultRequest(authTokenRequest, ServiceName);
-
-        request.UseQueryString = true;
-        request.HttpMethod = HttpMethod;
         request.Parameters.Add(XAmzExpires, ttlSeconds.ToString(CultureInfo.InvariantCulture));
         request.Parameters.Add(ActionKey, ActionValue);
-        var hostName = string.Format(HostnameStringFormat, region.SystemName);
-        request.Endpoint = new UriBuilder(Scheme, hostName).Uri;
 
         if (immutableCredentials.UseToken)
         {
             request.Parameters[XAmzSecurityToken] = immutableCredentials.Token;
         }
 
-        var signingResult = AWS4PreSignedUrlSigner.SignRequest(request, null, new RequestMetrics(),
-            immutableCredentials.AccessKey,
-            immutableCredentials.SecretKey, ServiceName, region.SystemName);
+        var signingResult = AWS4PreSignedUrlSigner.SignRequest(
+            request, null, new RequestMetrics(),
+            immutableCredentials.AccessKey, immutableCredentials.SecretKey,
+            ServiceName, region.SystemName);
 
-        var authorization = signingResult.ForQueryParameters;
         var url = AmazonServiceClient.ComposeUrl(request);
-
-        var authTokenString = $"{url.AbsoluteUri}&{GetUserAgent()}&{authorization}";
-
-        var byteArray = Encoding.UTF8.GetBytes(authTokenString);
+        var authTokenString = string.Concat(url.AbsoluteUri, "&", UserAgentString, "&", signingResult.ForQueryParameters);
 
         var expiryMs = (new DateTimeOffset(signingResult.DateTime).ToUnixTimeSeconds() + ttlSeconds) * 1000;
-        return (Convert.ToBase64String(byteArray).Replace('+', '-').Replace('/', '_').TrimEnd('='), expiryMs);
+        return (Base64UrlEncode(authTokenString), expiryMs);
+    }
+
+    /// <summary>
+    /// Encodes a string as base64url (RFC 4648 §5) without padding.
+    /// </summary>
+    private static string Base64UrlEncode(string input)
+    {
+        var bytes = Encoding.UTF8.GetBytes(input);
+        return Convert.ToBase64String(bytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
     }
 
     private TimeSpan GetTtl(AWSCredentials credentials)
@@ -312,6 +364,18 @@ public class AWSMSKAuthTokenGenerator
         // Calculate actual TTL for credential
         TimeSpan ttlCredential = credentials.Expiration.Value - _timeProvider.Invoke();
 
+        // Guard against expired or near-expired credentials producing a zero/negative TTL.
+        // This can happen when credentials are at the very edge of their refresh window.
+        if (ttlCredential.TotalSeconds < MinTtlSeconds)
+        {
+            _logger.LogWarning(
+                "Credential TTL is non-positive ({ttl}s). Credentials may have already expired. " +
+                "Clamping to {min}s minimum — token may still be rejected by the broker.",
+                ttlCredential.TotalSeconds.ToString(CultureInfo.InvariantCulture),
+                MinTtlSeconds.ToString(CultureInfo.InvariantCulture));
+            return TimeSpan.FromSeconds(MinTtlSeconds);
+        }
+
         // Only use TTL for credential if it's less than the prior TTL to cap token lifetime
         if (ttlCredential >= ttl)
         {
@@ -326,23 +390,38 @@ public class AWSMSKAuthTokenGenerator
         return ttl;
     }
 
-    private static string GetUserAgent() => $"User-Agent=aws-msk-iam-sasl-signer-net-{SignerVersion.CurrentVersion}";
-
     /// <summary>
-    ///     Helper method to log the user credentials
+    /// Logs the caller identity for debugging purposes.
+    /// Only active when <paramref name="awsDebugCreds"/> is true and Debug logging is enabled.
     /// </summary>
-    /// <param name="credentials"></param>
-    /// <param name="region"></param>
-    /// <param name="awsDebugCreds"></param>
-    /// <returns></returns>
     private async Task LogCredentialsIdentity(AWSCredentials credentials, RegionEndpoint region, bool awsDebugCreds)
     {
         if (awsDebugCreds && _logger.IsEnabled(LogLevel.Debug))
         {
-            AmazonSecurityTokenServiceClient stsDebugClient = new(credentials, region);
-            var response = await stsDebugClient.GetCallerIdentityAsync(new GetCallerIdentityRequest());
+            using AmazonSecurityTokenServiceClient stsDebugClient = new(credentials, region);
+            var response = await stsDebugClient.GetCallerIdentityAsync(new GetCallerIdentityRequest()).ConfigureAwait(false);
 
-            _logger.LogDebug("Credentials Identity: UserId: {user}, Account: {account}, Arn: {arn}", response.UserId, response.Account, response.Arn);
+            _logger.LogDebug("Credentials Identity: UserId: {UserId}, Account: {Account}, Arn: {Arn}", response.UserId, response.Account, response.Arn);
         }
+    }
+
+    /// <summary>
+    /// Disposes the internally-managed STS client (if any).
+    /// If an STS client was provided via the constructor, it is NOT disposed — the caller owns its lifetime.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (!_stsClientProvided)
+        {
+            _stsClient?.Dispose();
+            _stsClient = null;
+        }
+
+        _disposed = true;
     }
 }

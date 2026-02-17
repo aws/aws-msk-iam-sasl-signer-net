@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
-    <PropertyGroup>
+  <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>AWS.MSK.Auth</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
-      <Nullable>enable</Nullable>
+    <Nullable>enable</Nullable>
     <LangVersion>10.0</LangVersion>
     <Version>1.1.2</Version>
     <Title>AWS MSK Signer library for IAM Authentication</Title>
-    <Description>This libary vends encoded IAM v4 signatures which can be used as IAM Auth tokens to authenticate against an MSK cluster.</Description>
+    <Description>This library vends encoded IAM v4 signatures which can be used as IAM Auth tokens to authenticate against an MSK cluster.</Description>
     <Authors>Amazon Web Services</Authors>
     <Copyright>Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.</Copyright>
     <PackageTags>AWS;MSK;Kafka;IAM</PackageTags>
@@ -17,12 +17,11 @@
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <RepositoryUrl>https://github.com/aws/aws-msk-iam-sasl-signer-net</RepositoryUrl>
     <SignAssembly>True</SignAssembly>
-                <AssemblyOriginatorKeyFile>../public.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile>../public.snk</AssemblyOriginatorKeyFile>
     <Company>Amazon Web Services</Company>
   </PropertyGroup>
 
-
-    <ItemGroup>
+  <ItemGroup>
     <None Include="..\LICENSE" Pack="true" PackagePath="" />
     <None Include="..\NOTICE" Pack="true" PackagePath="" />
     <None Include="..\icon.png" Pack="true" PackagePath="" />
@@ -31,8 +30,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Core" Version="4.0.3.5" />
+    <PackageReference Include="AWSSDK.Core" Version="4.0.3.14" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.5.9" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.7" />
-    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.1.5" />
-    </ItemGroup>
+  </ItemGroup>
 </Project>
