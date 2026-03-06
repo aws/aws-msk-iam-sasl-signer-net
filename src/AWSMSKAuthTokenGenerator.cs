@@ -21,7 +21,7 @@ namespace AWS.MSK.Auth;
 /// Generates pre-signed authentication tokens for AWS MSK clusters using IAM credentials.
 /// This class is thread-safe and designed to be used as a long-lived singleton.
 /// </summary>
-public sealed class AWSMSKAuthTokenGenerator : IDisposable
+public sealed class AWSMSKAuthTokenGenerator
 {
     private const int MinTtlSeconds = 1;
     private const int MaxTtlSeconds = 604800; // 7 days — AWS SigV4 maximum
@@ -60,13 +60,9 @@ public sealed class AWSMSKAuthTokenGenerator : IDisposable
         }
     }
 
-    private AmazonSecurityTokenServiceClient? _stsClient;
-    private RegionEndpoint? _stsClientRegion;
-    private readonly object _stsClientLock = new();
+    private AmazonSecurityTokenServiceClient _stsClient;
     private readonly ILogger<AWSMSKAuthTokenGenerator> _logger;
     private readonly Func<DateTime> _timeProvider;
-    private readonly bool _stsClientProvided;
-    private bool _disposed;
 
     /// <summary>
     /// Constructor for AWSMSKAuthTokenGenerator.
@@ -75,13 +71,11 @@ public sealed class AWSMSKAuthTokenGenerator : IDisposable
     /// <param name="loggerFactory">Injectable logger factory</param>
     /// <param name="timeProvider">Injectable time provider</param>
     public AWSMSKAuthTokenGenerator(
-        AmazonSecurityTokenServiceClient? stsClient = null,
+        AmazonSecurityTokenServiceClient stsClient,
         ILoggerFactory? loggerFactory = null,
         Func<DateTime>? timeProvider = null)
     {
-        _stsClientProvided = stsClient is not null;
         _stsClient = stsClient;
-        _stsClientRegion = stsClient?.Config?.RegionEndpoint;
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<AWSMSKAuthTokenGenerator>();
         _timeProvider = timeProvider ?? (static () => DateTime.UtcNow);
     }
@@ -135,31 +129,6 @@ public sealed class AWSMSKAuthTokenGenerator : IDisposable
 
     #region GenerateAuthTokenFromRole
 
-    private AmazonSecurityTokenServiceClient GetStsClient(RegionEndpoint region)
-    {
-        if (_stsClientProvided)
-        {
-            return _stsClient!;
-        }
-
-        // Double-checked lock to ensure thread safety when creating/replacing the STS client
-        if (_stsClient is null || _stsClientRegion != region)
-        {
-            lock (_stsClientLock)
-            {
-                if (_stsClient is null || _stsClientRegion != region)
-                {
-                    var oldClient = _stsClient;
-                    _stsClient = new AmazonSecurityTokenServiceClient(region);
-                    _stsClientRegion = region;
-                    oldClient?.Dispose();
-                }
-            }
-        }
-
-        return _stsClient!;
-    }
-
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using an IAM Role
     /// <remarks>
@@ -181,7 +150,7 @@ public sealed class AWSMSKAuthTokenGenerator : IDisposable
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = GetStsClient(region).AssumeRoleAsync(assumeRoleReq)
+        var assumeRoleResponse = _stsClient.AssumeRoleAsync(assumeRoleReq)
             .ConfigureAwait(false).GetAwaiter().GetResult();
 
         var stsCredentials = assumeRoleResponse.Credentials;
@@ -213,7 +182,7 @@ public sealed class AWSMSKAuthTokenGenerator : IDisposable
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = await GetStsClient(region).AssumeRoleAsync(assumeRoleReq).ConfigureAwait(false);
+        var assumeRoleResponse = await _stsClient.AssumeRoleAsync(assumeRoleReq).ConfigureAwait(false);
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
@@ -403,25 +372,5 @@ public sealed class AWSMSKAuthTokenGenerator : IDisposable
 
             _logger.LogDebug("Credentials Identity: UserId: {UserId}, Account: {Account}, Arn: {Arn}", response.UserId, response.Account, response.Arn);
         }
-    }
-
-    /// <summary>
-    /// Disposes the internally-managed STS client (if any).
-    /// If an STS client was provided via the constructor, it is NOT disposed — the caller owns its lifetime.
-    /// </summary>
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (!_stsClientProvided)
-        {
-            _stsClient?.Dispose();
-            _stsClient = null;
-        }
-
-        _disposed = true;
     }
 }
