@@ -60,9 +60,11 @@ public sealed class AWSMSKAuthTokenGenerator
         }
     }
 
-    private AmazonSecurityTokenServiceClient _stsClient;
+    private AmazonSecurityTokenServiceClient? _stsClient;
+    private RegionEndpoint? _stsClientRegion;
     private readonly ILogger<AWSMSKAuthTokenGenerator> _logger;
     private readonly Func<DateTime> _timeProvider;
+    private readonly bool _stsClientProvided;
 
     /// <summary>
     /// Constructor for AWSMSKAuthTokenGenerator.
@@ -71,11 +73,13 @@ public sealed class AWSMSKAuthTokenGenerator
     /// <param name="loggerFactory">Injectable logger factory</param>
     /// <param name="timeProvider">Injectable time provider</param>
     public AWSMSKAuthTokenGenerator(
-        AmazonSecurityTokenServiceClient stsClient,
+        AmazonSecurityTokenServiceClient? stsClient = null,
         ILoggerFactory? loggerFactory = null,
         Func<DateTime>? timeProvider = null)
     {
+        _stsClientProvided = stsClient is not null;
         _stsClient = stsClient;
+        _stsClientRegion = stsClient?.Config?.RegionEndpoint;
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<AWSMSKAuthTokenGenerator>();
         _timeProvider = timeProvider ?? (static () => DateTime.UtcNow);
     }
@@ -129,6 +133,19 @@ public sealed class AWSMSKAuthTokenGenerator
 
     #region GenerateAuthTokenFromRole
 
+    private AmazonSecurityTokenServiceClient GetStsClient(RegionEndpoint region)
+    {
+        // If the STS client was provided via the constructor, always use it
+        if (!_stsClientProvided && (_stsClient is null || _stsClientRegion != region))
+        {
+            _stsClient?.Dispose();
+            _stsClient = new AmazonSecurityTokenServiceClient(region);
+            _stsClientRegion = region;
+        }
+
+        return _stsClient!;
+    }
+
     /// <summary>
     /// Generate a token for IAM authentication to an MSK cluster using an IAM Role
     /// <remarks>
@@ -150,7 +167,7 @@ public sealed class AWSMSKAuthTokenGenerator
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = _stsClient.AssumeRoleAsync(assumeRoleReq)
+        var assumeRoleResponse = GetStsClient(region).AssumeRoleAsync(assumeRoleReq)
             .ConfigureAwait(false).GetAwaiter().GetResult();
 
         var stsCredentials = assumeRoleResponse.Credentials;
@@ -182,7 +199,7 @@ public sealed class AWSMSKAuthTokenGenerator
             RoleArn = roleArn
         };
 
-        var assumeRoleResponse = await _stsClient.AssumeRoleAsync(assumeRoleReq).ConfigureAwait(false);
+        var assumeRoleResponse = await GetStsClient(region).AssumeRoleAsync(assumeRoleReq).ConfigureAwait(false);
 
         var stsCredentials = assumeRoleResponse.Credentials;
 
