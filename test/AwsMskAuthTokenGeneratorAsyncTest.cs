@@ -175,6 +175,38 @@ public static class AwsMskAuthTokenGeneratorAsyncTest
     }
 
     [Fact]
+    public static async Task GenerateAuthToken_ConcurrentStsClientAccess_WithProvidedClient()
+    {
+        var assumeRoleResponse = new AssumeRoleResponse
+        {
+            Credentials = new Credentials("accessKey", "secretKey", "sessionToken", DateTime.UtcNow)
+        };
+
+        var stsClientMock = new Mock<AmazonSecurityTokenServiceClient>(RegionEndpoint.USEast1);
+        stsClientMock
+            .Setup(m => m.AssumeRoleAsync(It.IsAny<AssumeRoleRequest>(), CancellationToken.None))
+            .Returns(Task.FromResult(assumeRoleResponse));
+
+        var generator = new AWSMSKAuthTokenGenerator(stsClientMock.Object);
+
+        // Run multiple concurrent async calls to exercise thread safety of GetStsClient
+        var tasks = Enumerable.Range(0, 10).Select(_ =>
+            generator.GenerateAuthTokenFromRoleAsync(
+                RegionEndpoint.USEast1,
+                "arn:aws:iam::123456789101:role/MSKRole",
+                "mySession")
+        ).ToArray();
+
+        // All tasks should complete without exceptions
+        await Task.WhenAll(tasks);
+
+        // All calls should have used the provided STS client
+        stsClientMock.Verify(
+            m => m.AssumeRoleAsync(It.IsAny<AssumeRoleRequest>(), CancellationToken.None),
+            Times.Exactly(10));
+    }
+
+    [Fact]
     public static async Task GenerateAuthToken_NullCredentials_ThrowsArgumentException()
     {
         var exception = await Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(null!, RegionEndpoint.USEast1).AsTask());

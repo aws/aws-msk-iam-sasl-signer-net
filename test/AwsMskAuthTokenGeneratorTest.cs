@@ -42,39 +42,33 @@ public static class AwsMskAuthTokenGeneratorTest
     }
 
     [Fact]
-    public static void GenerateAuthToken_TestInjectedCredentials()
+    public static async Task GenerateAuthToken_TestInjectedCredentials()
     {
-#pragma warning disable xUnit1031
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1, false).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+        (var token, long expiryMs) = await new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1, false);
 
         ValidateTokenSignature(token, expiryMs);
     }
 
     [Fact]
-    public static void GenerateAuthToken_TestInjectedCredentialsWithSoonExpiration()
+    public static async Task GenerateAuthToken_TestInjectedCredentialsWithSoonExpiration()
     {
         DateTime now = DateTime.UtcNow;
         TimeSpan ttl = TimeSpan.FromMinutes(5);
 
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator(timeProvider: () => now)
+        (var token, long expiryMs) = await new AWSMSKAuthTokenGenerator(timeProvider: () => now)
             .GenerateAuthTokenFromCredentialsProvider(() => new SessionAWSCredentials("accessKey", "secretKey", "sessionToken") { Expiration = now + ttl }, RegionEndpoint.USEast1,
-#pragma warning disable xUnit1031
-                false).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+                false);
 
         ValidateTokenSignature(token, expiryMs, ttl);
     }
 
     [Fact]
-    public static void GenerateAuthToken_TestInjectedCredentialsWithLongExpiration()
+    public static async Task GenerateAuthToken_TestInjectedCredentialsWithLongExpiration()
     {
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator()
+        (var token, long expiryMs) = await new AWSMSKAuthTokenGenerator()
             .GenerateAuthTokenFromCredentialsProvider(
                 () => new SessionAWSCredentials("accessKey", "secretKey", "sessionToken") { Expiration = DateTime.UtcNow.AddHours(6) },
-#pragma warning disable xUnit1031
-                RegionEndpoint.USEast1, false).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+                RegionEndpoint.USEast1, false);
 
         ValidateTokenSignature(token, expiryMs);
     }
@@ -100,43 +94,37 @@ public static class AwsMskAuthTokenGeneratorTest
     }
 
     [Fact]
-    public static void GenerateAuthToken_TestInjectedCredentials_CustomExpiryDuration()
+    public static async Task GenerateAuthToken_TestInjectedCredentials_CustomExpiryDuration()
     {
         TimeSpan expiryDuration = TimeSpan.FromMinutes(20);
 
-#pragma warning disable xUnit1031
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }.GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1, false).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+        (var token, long expiryMs) = await new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }.GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, RegionEndpoint.USEast1, false);
 
         ValidateTokenSignature(token, expiryMs, expiryDuration);
     }
 
     [Fact]
-    public static void GenerateAuthToken_TestInjectedCredentialsWithSoonExpiration_CustomExpiryDuration()
+    public static async Task GenerateAuthToken_TestInjectedCredentialsWithSoonExpiration_CustomExpiryDuration()
     {
         DateTime now = DateTime.UtcNow;
         TimeSpan ttl = TimeSpan.FromMinutes(5);
 
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator(timeProvider: () => now) { ExpiryDuration = TimeSpan.FromMinutes(20) }
+        (var token, long expiryMs) = await new AWSMSKAuthTokenGenerator(timeProvider: () => now) { ExpiryDuration = TimeSpan.FromMinutes(20) }
             .GenerateAuthTokenFromCredentialsProvider(() => new SessionAWSCredentials("accessKey", "secretKey", "sessionToken") { Expiration = now + ttl }, RegionEndpoint.USEast1,
-#pragma warning disable xUnit1031
-                false).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+                false);
 
         ValidateTokenSignature(token, expiryMs, ttl);
     }
 
     [Fact]
-    public static void GenerateAuthToken_TestInjectedCredentialsWithLongExpiration_CustomExpiryDuration()
+    public static async Task GenerateAuthToken_TestInjectedCredentialsWithLongExpiration_CustomExpiryDuration()
     {
         TimeSpan expiryDuration = TimeSpan.FromMinutes(20);
 
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }
+        (var token, long expiryMs) = await new AWSMSKAuthTokenGenerator { ExpiryDuration = expiryDuration }
             .GenerateAuthTokenFromCredentialsProvider(
                 () => new SessionAWSCredentials("accessKey", "secretKey", "sessionToken") { Expiration = DateTime.UtcNow.AddHours(6) },
-#pragma warning disable xUnit1031
-                RegionEndpoint.USEast1, false).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+                RegionEndpoint.USEast1, false);
 
         ValidateTokenSignature(token, expiryMs, expiryDuration);
     }
@@ -199,28 +187,60 @@ public static class AwsMskAuthTokenGeneratorTest
     }
 
     [Fact]
-    public static void GenerateAuthToken_NullCredentials_ThrowsArgumentException()
+    public static async Task GenerateAuthToken_NullCredentials_ThrowsArgumentException()
     {
-        var exception = Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(null!, RegionEndpoint.USEast1, false).GetAwaiter().GetResult());
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(null!, RegionEndpoint.USEast1, false).AsTask());
         Assert.Contains("credentialsProvider", exception.Message);
     }
 
     [Fact]
-    public static void GenerateAuthToken_NullRegion_ThrowsArgumentException()
+    public static async Task GenerateAuthToken_NullRegion_ThrowsArgumentException()
     {
-        var exception = Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, null!, false).GetAwaiter().GetResult());
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(() => SessionCredentials, null!, false).AsTask());
         Assert.Contains("region", exception.Message);
     }
 
     [Fact]
-    public static void GenerateAuthToken_NullCredentials_ThrowsArgumentNullException()
+    public static async Task GenerateAuthToken_NullCredentials_ThrowsArgumentNullException()
     {
-        var exception = Assert.Throws<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(() => null!, RegionEndpoint.USEast1, false).GetAwaiter().GetResult());
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() => new AWSMSKAuthTokenGenerator().GenerateAuthTokenFromCredentialsProvider(() => null!, RegionEndpoint.USEast1, false).AsTask());
         Assert.Contains("credentials", exception.Message);
     }
 
     [Fact]
-    public static void GenerateAuthToken_CredentialExpirationWithFractionalSeconds_XAmzExpiresIsInteger()
+    public static async Task GenerateAuthToken_ConcurrentStsClientAccess_WithProvidedClient()
+    {
+        var assumeRoleResponse = new AssumeRoleResponse
+        {
+            Credentials = new Credentials("accessKey", "secretKey", "sessionToken", DateTime.UtcNow)
+        };
+
+        var stsClientMock = new Mock<AmazonSecurityTokenServiceClient>(RegionEndpoint.USEast1);
+        stsClientMock
+            .Setup(m => m.AssumeRoleAsync(It.IsAny<AssumeRoleRequest>(), CancellationToken.None))
+            .Returns(Task.FromResult(assumeRoleResponse));
+
+        var generator = new AWSMSKAuthTokenGenerator(stsClientMock.Object);
+
+        // Run multiple concurrent calls to exercise thread safety of GetStsClient
+        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(() =>
+            generator.GenerateAuthTokenFromRole(
+                RegionEndpoint.USEast1,
+                "arn:aws:iam::123456789101:role/MSKRole",
+                "mySession")
+        )).ToArray();
+
+        // All tasks should complete without exceptions
+        await Task.WhenAll(tasks);
+
+        // All calls should have used the provided STS client
+        stsClientMock.Verify(
+            m => m.AssumeRoleAsync(It.IsAny<AssumeRoleRequest>(), CancellationToken.None),
+            Times.Exactly(10));
+    }
+
+    [Fact]
+    public static async Task GenerateAuthToken_CredentialExpirationWithFractionalSeconds_XAmzExpiresIsInteger()
     {
         // This test verifies that X-Amz-Expires is always an integer even when
         // credential expiration results in fractional seconds for the TTL.
@@ -228,16 +248,14 @@ public static class AwsMskAuthTokenGeneratorTest
         var now = DateTime.UtcNow;
         var ttlWithFractionalSeconds = TimeSpan.FromSeconds(299.7);
 
-        (var token, long expiryMs) = new AWSMSKAuthTokenGenerator(timeProvider: () => now)
+        (var token, long expiryMs) = await new AWSMSKAuthTokenGenerator(timeProvider: () => now)
             .GenerateAuthTokenFromCredentialsProvider(
                 () => new SessionAWSCredentials("accessKey", "secretKey", "sessionToken")
                 {
                     Expiration = now + ttlWithFractionalSeconds
                 },
                 RegionEndpoint.USEast1,
-#pragma warning disable xUnit1031
-                false).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+                false);
 
         // The TTL should be truncated to 299 seconds (not 299.7 or rounded to 300)
         ValidateTokenSignature(token, expiryMs, TimeSpan.FromSeconds(299));
